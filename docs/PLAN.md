@@ -12,7 +12,8 @@ model, and prompt-injection blocking before anything reaches the retriever. The 
 Integrated Guardrails` contains **documentation only** — README.md, CLAUDE.md,
 THIRD_PARTY_LICENSES.md, NOTICE, LICENSE, .gitignore, the ten files in `docs/`, and `docs/adr/0001–0009`.
 No code: `src/`, `tests/`, `scripts/`, `config/`, the Makefile, `docker-compose.yml` and
-`pyproject.toml` do not exist. `git init` has not been run. Nothing installed.
+`pyproject.toml` do not exist. Nothing installed. The repository is initialised and the
+documentation corpus is committed on `main`; no code has ever been committed.
 
 **The intended outcome.** Disconnect the machine from the internet, ingest a local PDF, embed it
 locally, store the vectors locally, ask a question containing personal data, and get a grounded,
@@ -355,9 +356,9 @@ This is the **first milestone**, done before any Python. All paths are relative 
 | `docs/adr/0001…0009*.md` | Nine decision records — one per contested choice in §2 |
 | `NOTICE`, `THIRD_PARTY_LICENSES.md` | Attribution; every pinned package/model with SPDX id. Records that **no model weights are redistributed** |
 
-Also in this pass: **`git init`** (the directory is not yet a repo) and `.gitignore` excluding
-`models/**`, `audit/**`, `data/private/**`, `.venv*`, `.env`, `vendor/` — so weights and PII can
-never be committed.
+Also in this pass (both done): **`git init`**, and a `.gitignore` excluding `models/**`, `audit/**`,
+`data/private/**`, `.venv*`, `.env`, `vendor/` — so weights and PII can never be committed. The
+`.gitignore` is itself a control; see [CLAUDE.md](../CLAUDE.md) invariant 4.
 
 ### Two rules for these docs
 

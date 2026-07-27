@@ -275,7 +275,8 @@ Reasonable-sounding changes that are wrong *here*:
 **As of 2026-07-27 this repository contains documentation only. No code has been written.**
 
 - **Present:** `README.md`, `CLAUDE.md`, `THIRD_PARTY_LICENSES.md`, `NOTICE`, `LICENSE`, `.gitignore`, `docs/{BLUEPRINT,PLAN,ARCHITECTURE,THREAT_MODEL,GUARDRAILS,AIRGAP_RUNBOOK,COMPLIANCE,EVALUATION,OPERATIONS,LIMITATIONS}.md`, and `docs/adr/0001`–`0009`. All of those documents are written; none is "planned".
-- **Absent:** `src/`, `tests/`, `scripts/`, `config/`, `Makefile`, `docker-compose.yml`, `pyproject.toml`, `docs/metrics/`. `git init` has **not** been run.
+- **Absent:** `src/`, `tests/`, `scripts/`, `config/`, `Makefile`, `docker-compose.yml`, `pyproject.toml`, `docs/metrics/`.
+- **Version control:** the repository is initialised and the documentation corpus is committed on `main`. No code has ever been committed, so the git history is not evidence that anything was built.
 
 **Nothing in this corpus has been measured — no metric, no latency, no RAM figure, no recall number.** The only facts established on this host are the environment facts in PLAN §1: 8 GB RAM, 5.9 GB free disk (**provisioning needs ≥ 25 GB and cannot complete until space is freed**), Docker 29.5.3 with the daemon stopped, Ollama client 0.30.10 with no server and no models pulled. Every RAM figure in BLUEPRINT §7 except the 3.00 GB macOS baseline is an ESTIMATE, and the INT8 classifier RSS (0.30 GB) is **UNVERIFIED and blocking** — see **OQ-1**.
 
@@ -284,8 +285,8 @@ This warning scopes over **every document listed above, without exception** — 
 **Build order** — `M-DOCS → M0 → M1 → M2 → … → M15`, per [docs/PLAN.md](docs/PLAN.md) §7 and BLUEPRINT §10:
 
 ```
-M-DOCS  all markdown into the repo, git init         ← in progress
-M0      skeleton: src/sagp tree, Settings, errors, types, Makefile
+M-DOCS  all markdown into the repo, git init         ← DONE
+M0      skeleton: src/sagp tree, Settings, errors, types, Makefile   ← next
 M1      PROVISION EVERYTHING (online, one-way door, longest single item)
 M2      audit spine — lands BEFORE any guardrail exists
 M3 normalizer · M4 PII · M5 injection · M6 metrics gate · M7 LLM client

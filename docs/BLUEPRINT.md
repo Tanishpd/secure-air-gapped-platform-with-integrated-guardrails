@@ -2,7 +2,8 @@
 
 > **This is a design specification, not a description of a running system.** As of 2026-07-27 this
 > repository contains documentation only — there is no `src/`, no `tests/`, no `scripts/`, no
-> `config/`, no Makefile and no `docker-compose.yml`; `git init` has not been run. **Nothing described
+> `config/`, no Makefile and no `docker-compose.yml`. The repository is initialised and the docs are
+> committed, but no code has ever been committed. **Nothing described
 > below has been built or run.** Every latency, RAM, disk, recall and accuracy figure is a projection,
 > an estimate or a build-gate target — **not one is a measurement**. Where a test, gate, Make target or
 > script is described in the present tense, read it as a specification of intended behaviour, never as

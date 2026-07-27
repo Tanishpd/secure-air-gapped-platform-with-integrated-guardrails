@@ -126,7 +126,7 @@ implementation. The build order and the definition of each milestone live in
 
 | Done | Milestone | Deliverable | Needs network |
 |---|---|---|---|
-| [~] | **M-DOCS** *(in progress)* | Every markdown file written into the repo, plus `.gitignore`, `LICENSE`, `NOTICE`. `git init` has **not** been run — the directory is not yet a git repo, so the milestone is not complete | no |
+| [x] | **M-DOCS** *(complete)* | Every markdown file written into the repo, plus `.gitignore`, `LICENSE`, `NOTICE`; `git init` run and the corpus committed. Documentation only — no code | no |
 | [ ] | M0 | Skeleton: `src/sagp/` tree, `pyproject.toml`, `Settings`, `errors.py`, `types.py`, Makefile | no |
 | [ ] | M1 | **PROVISION EVERYTHING** — `artifacts.lock`, `scripts/provision/01..10`, four gates, `MANIFEST.json` | **YES — online only** |
 | [ ] | M2 | Audit spine: events, hashing, sink, verify, scrub, quarantine, redactors | no |
