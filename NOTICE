@@ -1,0 +1,121 @@
+Secure Air-Gapped Platform with Integrated Guardrails (sagp)
+Copyright 2026 The sagp authors
+
+This product includes software developed by the sagp authors.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License in the LICENSE file distributed with this work, or at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+The Apache-2.0 licence above covers the source code in this repository only.
+
+
+NO MODEL WEIGHTS ARE REDISTRIBUTED
+----------------------------------
+
+This repository contains no model weights, no container images, and no vendored
+wheels. Everything under models/ and vendor/ is excluded by .gitignore, with two
+deliberate exceptions -- models/MANIFEST.json and models/README.md -- neither of
+which contains any part of a model.
+
+All artefacts are fetched from their upstream publishers during provisioning at
+pinned revisions and recorded by sha256 in MANIFEST.json. Licence obligations
+attach to the party performing that download.
+
+
+THIRD-PARTY COMPONENTS
+----------------------
+
+The complete inventory, with SPDX identifiers and licence-text locations, is in
+THIRD_PARTY_LICENSES.md. Attributions required beyond a plain licence copy are
+reproduced below.
+
+Every SPDX identifier below is UNVERIFIED on this machine. Provisioning has not
+been run, so there is no installed distribution metadata to read; the identifiers
+were recorded from package metadata known at authoring time and must be
+re-verified against the actual wheel METADATA and dist-info licence files before
+the first release. See THIRD_PARTY_LICENSES.md section 0.
+
+Pinned dependencies (see THIRD_PARTY_LICENSES.md sections 1 and 2):
+
+  Apache-2.0    grpcio, protobuf-adjacent tooling, tokenizers, qdrant-client,
+                python-multipart, phonenumbers, regex, huggingface-hub,
+                transformers, onnx, sentence-transformers, ml_dtypes
+  MIT           fastapi, pydantic, pydantic-settings, presidio-analyzer,
+                presidio-anonymizer, spacy, thinc-apple-ops, onnxruntime,
+                pyyaml, ollama (Python client), pytest
+  BSD-3-Clause  uvicorn, numpy, pypdf, tldextract, protobuf, httpx, torch
+  Apache-2.0 OR BSD-3-Clause   cryptography
+  PSF-2.0       CPython 3.11.15
+  MPL-2.0       certifi; the Public Suffix List snapshot bundled with tldextract
+
+  Several of these distributions ship their own NOTICE or third-party-notices
+  files -- notably grpcio, transformers, torch, and onnxruntime
+  (onnxruntime/ThirdPartyNotices.txt). Those files must be reproduced alongside
+  this NOTICE in any binary distribution built from this template. They are not
+  inlined here because the provisioning step that would produce them has not
+  been run; see THIRD_PARTY_LICENSES.md section 0.
+
+Model artefacts (see THIRD_PARTY_LICENSES.md section 3):
+
+  protectai/deberta-v3-base-prompt-injection-v2
+    Revision 90c9989b1a342275dd0d1a95aad283c04e075671
+    Licensed under the Apache License, Version 2.0.
+    Used as the prompt-injection classifier, quantized to INT8 ONNX locally
+    during provisioning. The derived INT8 artefact is not redistributed.
+
+  BAAI/bge-small-en-v1.5
+    Revision 5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+    Licensed under the MIT License.
+    Used as the text embedding model.
+
+  spaCy pipelines en_core_web_md / en_core_web_sm / en_core_web_lg, v3.8.0
+    Licensed under the MIT License.
+    Published by Explosion AI. Used for named-entity recognition within
+    Microsoft Presidio.
+
+  Meta Llama 3.2 (Ollama tags llama3.2:3b-instruct-q4_K_M, llama3.2:1b)
+    Built with Llama.
+    Llama 3.2 is licensed under the Llama 3.2 Community License,
+    Copyright (c) Meta Platforms, Inc. All Rights Reserved.
+    This licence is NOT OSI-approved, incorporates an Acceptable Use Policy by
+    reference, and imposes a condition on entities with more than 700 million
+    monthly active users. Print the full text with:
+        ollama show --license llama3.2:3b-instruct-q4_K_M
+
+  Meta Llama 3 (Ollama tag llama3:8b -- provisioned but NOT a supported
+  configuration on an 8 GB host)
+    Built with Meta Llama 3.
+    Licensed under the Meta Llama 3 Community License,
+    Copyright (c) Meta Platforms, Inc. All Rights Reserved.
+    This is a distinct licence from the Llama 3.2 Community License above.
+
+Container images, demo and proof profiles only (see section 4):
+
+  qdrant/qdrant:v1.18.3-unprivileged   Apache-2.0
+  alpine:3                             multiple licences; includes busybox
+                                       under GPL-2.0-only. Source-availability
+                                       obligations attach if the saved image
+                                       tar is redistributed.
+
+Rejected components:
+
+  PyMuPDF is deliberately NOT a dependency of this project. It is distributed
+  under AGPL-3.0, whose section 13 would impose network-copyleft obligations on
+  a service built from this template. pypdf (BSD-3-Clause) is used instead. See
+  THIRD_PARTY_LICENSES.md section 5.
+
+
+COMPLIANCE
+----------
+
+docs/COMPLIANCE.md is an engineering-to-control mapping template. It is not
+legal advice, not a certification, and not an attestation, and using it does not
+make a system compliant with anything.

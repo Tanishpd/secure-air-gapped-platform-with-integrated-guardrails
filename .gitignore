@@ -1,0 +1,131 @@
+# .gitignore — Secure Air-Gapped Platform with Integrated Guardrails
+#
+# This file is a CONTROL, not housekeeping. CLAUDE.md §2 invariant 4 —
+# "Never commit model weights, audit logs, .env, models/, data/private/" — is
+# enforced here and nowhere else in the repository. Weakening a rule below
+# weakens invariant 4 directly, so treat an edit to this file the same way you
+# would treat an edit to config/guardrails.yaml: deliberate, reviewed, explained.
+#
+# Ignoring a path reduces the risk of committing it; it does not guarantee that
+# it was never committed. Anything already in git history stays in git history.
+#
+# NOTE ON MECHANICS: git does not descend into an ignored directory, so a
+# negation such as `!models/MANIFEST.json` only works if the *directory* is not
+# ignored wholesale. Where a directory has committed contents, its children are
+# ignored with `dir/*` and the keepers are re-included. Do not "simplify" those
+# patterns to `dir/` — that silently drops the committed files.
+
+
+# ---------------------------------------------------------------------------
+# Model weights and derived artifacts
+# ---------------------------------------------------------------------------
+# Never redistributed. The upstream licences, the archived-model caveat and the
+# provenance rules live in THIRD_PARTY_LICENSES.md; weights are fetched by the
+# provisioning venv and verified against models/MANIFEST.json, never committed.
+# `models/*` (not `models/`) so the two committed files below stay reachable.
+models/*
+!models/MANIFEST.json
+!models/README.md
+
+# ---------------------------------------------------------------------------
+# Offline wheelhouses
+# ---------------------------------------------------------------------------
+# vendor/ holds the downloaded wheels for the runtime and provisioning venvs.
+# Large, platform-specific, and reconstructible from the lockfiles below.
+vendor/
+
+# ---------------------------------------------------------------------------
+# Audit logs
+# ---------------------------------------------------------------------------
+# Audit records carry entity TYPES and COUNTS only (invariant 1), but they also
+# carry hashed correlators, request IDs and timestamps that are host- and
+# operator-specific. They are operational evidence, not source. Directory is
+# 0700 and the JSONL files are 0600 on disk.
+audit/
+
+# ---------------------------------------------------------------------------
+# Ingested documents and the vector store
+# ---------------------------------------------------------------------------
+# Under the default ingest_mode=raw (ADR-0006) the vector store holds UNMASKED
+# PII at rest. It is protected by loopback binding, filesystem permissions and
+# FileVault — NOT by the guardrail pipeline. None of it may reach the repo.
+# Qdrant is the only vector store in this design; data/chroma/ is a defensive
+# entry only, so that a stray local experiment cannot leak documents into git.
+data/private/
+data/qdrant/
+data/chroma/
+
+# ---------------------------------------------------------------------------
+# Secrets and key material
+# ---------------------------------------------------------------------------
+# Bearer tokens (SAGP_API_TOKEN, SAGP_API_TOKEN_REVEAL), the sealed and
+# provisioning environments, and any private key. .env.example is the committed
+# template and carries placeholders only. The manifest signing key is
+# self-signed: the public half is committed so a verifier can check the
+# manifest; the private half must never be in this tree at all.
+.env
+.env.sealed
+.env.provision
+*.pem
+*.key
+.airgap/keys/*
+!.airgap/keys/manifest_ed25519.pub
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Host-specific lifecycle state
+# ---------------------------------------------------------------------------
+# .airgap/state.json is the phase state machine (seal_generation, unseal_history)
+# for one machine. Committing it would let one host's seal state be mistaken for
+# another's, which is exactly the confusion the seal is meant to prevent.
+.airgap/state.json
+
+# ---------------------------------------------------------------------------
+# Evidence reports
+# ---------------------------------------------------------------------------
+# Signed proof reports and the append-only ledger embed hostnames, paths, local
+# clock timestamps and interface names. They are produced per-run and exported
+# deliberately, not tracked.
+evidence/
+
+# ---------------------------------------------------------------------------
+# Virtualenvs, caches, build noise
+# ---------------------------------------------------------------------------
+# Two venvs by design (ADR-0003): .venv is the runtime (no torch/transformers/
+# huggingface-hub — invariant 10), .venv-provision is the provisioning one.
+# Both are rebuilt from vendor/ + the lockfiles; neither is source.
+.venv
+.venv-provision
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ---------------------------------------------------------------------------
+# macOS noise
+# ---------------------------------------------------------------------------
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# EXPLICITLY KEPT — these must be committed
+# ---------------------------------------------------------------------------
+# The manifest and the lockfiles are what make the sealed build reproducible and
+# verifiable. models/MANIFEST.json pins every model revision with per-file
+# sha256 digests; the three lockfiles pin every wheel and artifact by hash. If
+# they are not in the repo, a rebuilt environment cannot be shown to be the same
+# environment, `make verify` has nothing to check the tree against, and the
+# air-gap evidence loses its baseline. They are small, non-sensitive, and
+# load-bearing — never ignore them, even by accident via a broader pattern.
+# (These negations are also a statement of intent: if a future pattern starts
+# matching one of these paths, the negation keeps the control from breaking.)
+!artifacts.lock
+!requirements.runtime.lock
+!requirements.provision.lock
+!models/MANIFEST.json
+!.env.example
+
+# docs/metrics/latest.json does not exist yet — it is produced by `make eval` at
+# M6. Once produced it is the committed metrics baseline that regression gates
+# compare against, so it is named here to keep it out of any future sweep.
+!docs/metrics/latest.json
