@@ -44,7 +44,7 @@
 | 25 | AF_UNIX in the egress guard | **Deny by default**, path allowlist (empty by default). `/var/run/docker.sock` denied unconditionally in OPERATE. | It is a full egress channel, not a local-only one. |
 | 26 | Subprocess egress | **Control in path (unmeasured)** — PEP 578 audit hooks on `subprocess.Popen`, `os.system`, `os.exec*`, `os.spawn*`, `ctypes.dlopen`. Re-characterised from "high, OPEN" to "a control is specified in the path for children of the guarded interpreter". "Closed" is not available as a verdict: no probe has been run on this host. | CPython raises these before fork; this is the stated most-likely failure (an agent running `pip install`). |
 | 27 | `.pth` bootstrap trigger | Reads **`.airgap/state.json`**, not `AIRGAP_PHASE`. Unreadable/missing → install in enforce mode. | An env var typo silently disabled both guard layers. |
-| 28 | HF offline env vars in `.env` | **Removed from `.env`.** Exported by `bin/sagp-serve` before the interpreter starts; asserted in `lifespan` against `huggingface_hub.constants` — which only exists in the **provisioning** venv, so at runtime the assertion is "hub is not importable". | pydantic-settings loads after `huggingface_hub` import; the flags were a no-op. |
+| 28 | HF offline env vars in `.env` | **Removed from `.env`.** Exported by `bin/sagp-serve` before the interpreter starts. **Corrected at M0:** `huggingface_hub` IS importable in `.venv` (`tokenizers==0.23.1` hard-depends on it), so the old "hub is not importable" assertion is wrong. The runtime assertion is instead "`torch` and `transformers` are not importable"; hub is neutralised by `HF_HUB_OFFLINE=1` (set before import) + the egress guard, not by absence. | pydantic-settings loads after `huggingface_hub` import; the flags must be exported by the launcher, not read from `.env`. |
 | 29 | `tldextract` PSL fetch | **`SealedEmailRecognizer`** with an injected no-fetch extractor. See §5.3. | Verified: `EmailRecognizer.validate_result` calls module-level `tldextract.extract`, which fetches the Public Suffix List over HTTPS on first use. |
 | 30 | Streaming | **Buffer-then-scan only.** SSE **stage events** (no content) are shipped; token streaming is not. | Citation validation and injection-compliance detection are undecidable on a partial response. |
 
@@ -250,7 +250,9 @@ This is the structural fix for the dependency deadlock.
                    Used by: scripts/provision/*.py. Never present on the sealed critical path.
                    Deleted (or left inert) after `make seal`.
 
-.venv/             THE SEALED RUNTIME. No torch, no transformers, no huggingface_hub.
+.venv/             THE SEALED RUNTIME. No torch, no transformers. (huggingface_hub
+                   arrives transitively via tokenizers; neutralised by HF_HUB_OFFLINE
+                   + the egress guard, not removed — corrected at M0.)
                    Tokenization: tokenizers.Tokenizer.from_file()
                    Inference:    onnxruntime.InferenceSession
                    NER:          spacy 3.8.13 + en_core_web_md
@@ -860,7 +862,7 @@ The right-hand column holds **positive controls** — a companion probe proving 
 ### 9.3 `make smoke` — 14 numbered functional checks
 
 ```
-[ 1/14] .venv present, Python 3.11.15, torch NOT importable
+[ 1/14] .venv present, Python 3.11.15, torch + transformers NOT importable (huggingface_hub IS, via tokenizers)
 [ 2/14] `import sagp` succeeds with the egress guard armed and zero violations
 [ 3/14] models/ matches MANIFEST.json in FULL mode; root hash printed
 [ 4/14] Presidio loads; detects EMAIL_ADDRESS + CREDIT_CARD in a synthetic string; zero egress violations
@@ -954,7 +956,7 @@ re-cut it to:
 
 **§2 — the invariants.** ⚠️ **`CLAUDE.md` §2 is the canonical invariant numbering for the whole corpus.** The ordering below is historical — it predates `CLAUDE.md` and does **not** match it. Treat this list as a checklist of *which* rules exist, never as a source of numbers: **do not cite an invariant by number from this section.** Every "invariant N" citation anywhere in these documents resolves against `CLAUDE.md` §2 and nothing else.
 
-1. **Never add a network call.** Only `127.0.0.1:11434` (Ollama) and `127.0.0.1:6333/6334` (Qdrant, demo profile) are permitted. No `huggingface_hub` at runtime — it is not installed in `.venv`.
+1. **Never add a network call.** Only `127.0.0.1:11434` (Ollama) and `127.0.0.1:6333/6334` (Qdrant, demo profile) are permitted. `huggingface_hub` IS installed in `.venv` (via `tokenizers`) but our code never imports it, and `HF_HUB_OFFLINE=1` + the egress guard stop it phoning home.
 2. **Never bypass the guardrail pipeline.** Any path reaching `OllamaClient` runs `pipeline.run_input()` before and `run_output()` after. No `skip_guardrails`, no debug mode, no direct LLM call in a route or script.
 3. **Never log raw PII, prompts, completions, retrieved text, or vault mappings.** `AuditEvent` is closed (`extra="forbid"`). Offending text goes to `audit/quarantine.py`, referenced by `incident_id` only.
 4. **Fail closed.** A guardrail that errors, times out, or returns a partial result **blocks**. Never `try/except: pass` around a guardrail.
@@ -965,7 +967,7 @@ re-cut it to:
 9. **Quote every path.** The repo path contains spaces. `"$ROOT"`, `"$(PWD)"`, `pathlib.Path` — never bare word-splitting.
 10. **Never install, download, `docker`, or `ollama pull` unprompted.** Provisioning is explicit and online-only.
 11. **Never run a network-touching command when `.airgap/state.json.phase == "OPERATE"`.** Add the artifact to `artifacts.lock` and require an explicit `make unseal REASON="…"`.
-12. **The runtime venv has no `torch`, `transformers`, or `huggingface_hub`.** If you think you need one, you need `tokenizers` or `onnxruntime` instead — say so rather than adding it.
+12. **The runtime venv has no `torch` or `transformers`.** (`huggingface_hub` rides in via `tokenizers` and is neutralised, not removed — corrected at M0; see the reconciliation ledger row 28.) If you think you need `torch`/`transformers` at runtime, you need `tokenizers` or `onnxruntime` instead — say so rather than adding it.
 13. **Adding a guardrail signal requires three edits in one commit:** an `AuditEvent` field, a `docs/COMPLIANCE.md` row, and a `test_audit_no_pii.py` case.
 
 **§9 — forbidden "good ideas":** token streaming that bypasses the output guardrail; caching LLM responses keyed by raw prompt; an OpenAI/Anthropic fallback client; telemetry; persisting the vault "for convenience"; `trust_remote_code=True`; auto-downloading a missing model at request time; a `/v1/raw` debug endpoint; returning scores in an error body; using `client.search()` (removed in qdrant-client 1.16.0); `spacy.cli.download`.

@@ -129,3 +129,8 @@ __pycache__/
 # M6. Once produced it is the committed metrics baseline that regression gates
 # compare against, so it is named here to keep it out of any future sweep.
 !docs/metrics/latest.json
+
+# Python build metadata (editable installs)
+*.egg-info/
+build/
+dist/

@@ -301,9 +301,10 @@ export SAGP_ENV=prod
 **at import time**, from the process environment. `pydantic-settings` loads `.env` *after* the interpreter
 has started and after imports have run — by which point the flags are a no-op. So `bin/sagp-serve` sources
 `.env.sealed` **before** it `exec`s the interpreter. That is the only supported launch path; starting
-`uvicorn` by hand bypasses it. At runtime the `lifespan` assertion degenerates to something stronger: HF
-Hub is not importable at all, because it is not installed in `.venv`. The flags are belt-and-braces for
-anything that *does* consult them.
+`uvicorn` by hand bypasses it. **Corrected at M0:** `huggingface_hub` *is* importable in `.venv` —
+`tokenizers==0.23.1` hard-depends on it — so the flags are not belt-and-braces, they are the primary
+control that keeps hub offline, alongside the egress guard. The `lifespan` assertion is therefore on
+`torch`/`transformers` being un-importable (they are), not on hub; our code never imports hub (AST scan).
 
 `.env.sealed` is **generated**. Never hand-edit it — that is one of the ways an impatient operator defeats
 the entire control set.
