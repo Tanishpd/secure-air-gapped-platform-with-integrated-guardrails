@@ -21,7 +21,7 @@ from and must stay consistent with [BLUEPRINT.md](BLUEPRINT.md) (authoritative) 
 | G3 | **Block prompt injection** before anything reaches the retriever or the model | Corpus metrics: recall ≥ 0.90, precision ≥ 0.85, benign FPR ≤ 0.10 — **build-gate targets, not measurements**; nothing has been evaluated yet (GUARDRAILS §10.2) |
 | G4 | Treat **retrieved document text as untrusted** — the primary threat is a malicious document author | Ingest-time per-chunk scan, `docs_quarantine`, assembled-context re-scan (C19) |
 | G5 | **Fail closed** everywhere. A guardrail that errors, times out, or returns a partial result blocks | `tests/security/test_guardrail_bypass.py` (AST + runtime spy); §10 of this document |
-| G6 | Leak **no detector signal** across the trust boundary | Every block is HTTP 400, byte-identical body, ≥ 120 ms timing floor |
+| G6 | Leak **no detector signal** across the trust boundary | Every detector block is HTTP 400, byte-identical body, padded to a fixed rejection deadline (120 ms placeholder) |
 | G7 | Produce **tamper-evident, reproducible evidence** rather than assertions | Ed25519-signed `MANIFEST.json`, hash-chained audit log, signed evidence ledger |
 | G8 | Fit inside **8 GB of unified memory** with headroom | §9 budget; `lifespan` refuses to boot above 90 % projected RSS |
 
@@ -255,22 +255,22 @@ dependencies**, never as `BaseHTTPMiddleware`.
 | C2 | `len(message) > SAGP_MAX_INPUT_CHARS` (8000) | `app/schemas.ChatRequest` | → **413 `INPUT_TOO_LARGE`** |
 | C3 | `norm, flags = normalize(message)` | `guardrails/normalize.normalize` | `TAG_CHARS` or `BIDI_OVERRIDE` in flags → **400 `PROMPT_REJECTED`** |
 | C4 | Heuristics over `norm` → weighted score + rule IDs | `guardrails/heuristics.score` | `DELIMITER_SPOOF` → **400** |
-| C5 | Deobfuscate `base64/base32/hex/rot13/leet/reverse/spaced`, depth 2, 256 KB cap; decoded payloads join the scan set | `guardrails/deobfuscate.expand` | decode bomb / cap exceeded → **400** |
+| C5 | Deobfuscate `base64/base32/hex/rot13/leet/reverse/spaced`, depth 2, 256 KB cap; each decoded surface is `normalize()`-d and joins **both** the C6 injection scan and the C10 BLOCK-list scan | `guardrails/deobfuscate.expand` | decode bomb / cap exceeded → **400** |
 | C6 | Injection classifier over `{raw, norm, *decoded}`; `max_length=512`, `stride=128`, cap `SAGP_MAX_WINDOWS=16`; `score = max` | `guardrails/injection/scanner.InjectionScanner.scan` → `injection/onnx_backend.OnnxScorer.run` | `truncated=True` → **400** ("too long to scan" never means allowed). Exception or > 2000 ms → **503 `GUARDRAIL_UNAVAILABLE`** |
 | C7 | Policy: `max(classifier, heuristic_weight) >= 0.85` | `guardrails/injection/scanner.InjectionScanner.decide` | → **400 `PROMPT_REJECTED`** |
 | C8 | `neutral, n = neutralize_placeholders(norm)` | `guardrails/placeholders.neutralize_placeholders` | `n > 0` → flag + audit; prompts are neutralized, **not** blocked |
 | C9 | Presidio `analyze(neutral, INGRESS)`, `default_score_threshold=0.50`, wall-clock cap 3000 ms | `guardrails/pii.PIIGuardrail.analyze` → `presidio_factory.get_analyzer` | exception, timeout, or **any recognizer regex timeout** → **503**. Never a partial result set at 200 |
-| C10 | BLOCK-list check: `CREDIT_CARD, IN_AADHAAR, US_SSN, IBAN_CODE, US_BANK_NUMBER, CRYPTO, MEDICAL_LICENSE, API_KEY, PRIVATE_KEY` | `guardrails/pii.PIIGuardrail.check_block_list` | any hit → **400 `PROMPT_REJECTED`** — identical status, body and timing to C7 |
+| C10 | BLOCK-list check over `{neutral, *decoded-normalized}`: `CREDIT_CARD, IN_AADHAAR, US_SSN, IBAN_CODE, US_BANK_NUMBER, CRYPTO, MEDICAL_LICENSE, API_KEY, PRIVATE_KEY` (scanning the decode set closes the encoded-credential bypass) | `guardrails/pii.PIIGuardrail.check_block_list` | any hit → **400 `PROMPT_REJECTED`** — identical status, body and timing to C7 |
 | C11 | `resolve_person_aliases(neutral, results, vault, origin="prompt")` — longest-first, strict subset, exactly-one-superset, **same origin only** | `guardrails/aliases.resolve_person_aliases` | ambiguous → mint a fresh placeholder (over-mask, never cross-link) |
 | C12 | `anonymize(neutral, results, {"DEFAULT": OperatorConfig("vault_placeholder", {"vault": vault})})` → `masked_prompt` | `guardrails/pii.PIIGuardrail.anonymize` → `vault.VaultPlaceholder.operate` | `SAGP_MAX_VAULT_ENTRIES=2000` exceeded → **400** (a vault-exhaustion input is an attack) |
 | C13 | Embed **`neutral`** — unmasked, normalized, `is_query=True` | `rag/embeddings.Embedder.encode` | embed exception or > 2000 ms → **503** |
 | C14 | `query_points(collection, query=vec, limit=6, score_threshold=0.35, query_filter=must_not guard.verdict=="quarantined", with_payload=True)` | `rag/retriever.Retriever.retrieve` → `rag/qdrant_store.QdrantStore.query` | store exception or > 3000 ms → **503** |
 | C15 | No hit ≥ `STRONG=0.50` → return `refusal.txt`, **no LLM call**, 200 with `decision="refuse_insufficient_context"` | `rag/retriever.Retriever.gate` + `llm/prompts/refusal.txt` | deterministic and auditor-testable |
 | C16 | Per retrieved chunk: `normalize()` → `neutralize_placeholders()` | `rag/retriever.Retriever.sanitize_hits` | `n > 0` → **drop the chunk** + high-severity alarm (tamper signal) |
-| C17 | `BatchAnalyzerEngine.analyze_iterator(chunks, "en", batch_size=6, n_process=1)` with EGRESS profile (0.35); `anonymize` each with the **same vault**, `origin=f"doc:{sha}"`. **BLOCK list NOT applied to chunks** | `guardrails/pii.PIIGuardrail.mask_chunks` | exception → **503** |
-| C18 | `nonce = secrets.token_hex(8)`; each masked chunk wrapped `<<<UNTRUSTED_DOCUMENT_{nonce}_S{i}>>> … <<</UNTRUSTED_DOCUMENT_{nonce}_S{i}>>>`. No datamarking. Retrieved content goes in the **user** role | `rag/prompt.build_prompt` | the sole builder of the final prompt string |
-| C19 | **Single** injection re-scan of the assembled masked context, threshold 0.90, adjacent-window corroboration (4–5 windows, so it is operative here) | `guardrails/injection/scanner.InjectionScanner.scan_context` | hit → drop the highest-scoring chunk, reassemble, rescan (max 2 iterations). All chunks dropped → C15 refusal. Exception → **503** |
-| C20 | Context char budget `SAGP_MAX_CTX_CHARS=7000`; drop lowest-scoring chunks until under | `utils/text.trim_to_budget` | prevents Ollama silently truncating the closing delimiter |
+| C17 | `BatchAnalyzerEngine.analyze_iterator(chunks, "en", batch_size=6, n_process=1)` with EGRESS profile (0.35); `anonymize` each with the **same vault**, `origin=f"doc:{sha}"`. BLOCK-list **rejection** NOT applied to chunks — but block-tier entities ARE masked here (binary / egress 0.40; GUARDRAILS §5.1), so nothing leaks unmasked | `guardrails/pii.PIIGuardrail.mask_chunks` | exception → **503** |
+| C18 | **Budget-select** masked chunks by retrieval score until under `SAGP_MAX_CTX_CHARS=7000` (**trim happens here, before the C19 re-scan**, so the scanned string is the delivered string), then `nonce = secrets.token_hex(8)`; each surviving chunk wrapped `<<<UNTRUSTED_DOCUMENT_{nonce}_S{i}>>> … <<</UNTRUSTED_DOCUMENT_{nonce}_S{i}>>>`. No datamarking. Retrieved content goes in the **user** role | `rag/prompt.build_prompt` + `utils/text.trim_to_budget` | the sole builder of the final prompt string; budget leaves 0 chunks → C15 refusal |
+| C19 | **Single** injection re-scan of the assembled masked context, threshold 0.90, adjacent-window corroboration (4–5 windows, so it is operative here; `max` governs, corroboration only escalates — GUARDRAILS §4.3) | `guardrails/injection/scanner.InjectionScanner.scan_context` | hit → drop the highest-scoring chunk, **re-apply the C18 budget**, reassemble, rescan (max 2 iterations). All chunks dropped → C15 refusal. Exception → **503** |
+| C20 | Assert the re-scanned assembled context is byte-identical to the user-role payload C21 sends (`test_final_bytes_were_scanned`, §9.4) | `guardrails/pipeline` invariant | any divergence is a bug, not a runtime path |
 | C21 | `ollama.Client("http://127.0.0.1:11434").chat(model, messages, stream=False, keep_alive="30m", options={temperature:0.1, top_p:0.9, num_predict:512, seed:42})`, timeout 120 s. **Never pass `num_ctx` per request** | `llm/ollama_client.OllamaClient.generate` | timeout or exception → **503** |
 | C22a | Output structural: strip markdown images/links; nonce delimiter or a system-prompt n-gram present in the output | `guardrails/output.structural_check` | → **block**, return `refusal.txt` — closes the zero-click exfil channel |
 | C22b | Presidio `analyze(response_raw, EGRESS 0.35)` → `anonymize` with the **same vault** → `masked_response` | `guardrails/output.egress_pii` | exception → **503** |
@@ -281,14 +281,17 @@ dependencies**, never as `BaseHTTPMiddleware`.
 | C25 | Write `AuditEvent`, `fsync`, chain link | `audit/sink.AuditSink.write` + `audit/scrub.assert_no_raw_values` | write or scrub failure → **503**, response **not** returned |
 | C26 | `finally: vault.clear()` | `guardrails/vault.PiiVault.clear` | unconditional; see LIMITATIONS item 12 on heap residue |
 
-**Uniform rejection surface.** Every 400 returns exactly:
+**Uniform rejection surface.** Every *detector* 400 (C3–C12) returns exactly:
 
 ```json
 {"error":{"code":"PROMPT_REJECTED","message":"Your request was rejected by the security policy.","incident_id":"<uuid4>"}}
 ```
 
-padded by `utils/timing.constant_time_floor(120ms)`. No score, threshold, rule ID, matched substring,
-model name, window index or entity type crosses the boundary. All of it is in the audit record,
+and terminates at a **fixed rejection deadline** via `utils/timing.constant_time_floor` — a single
+wall-clock target every detector reject is padded to, not a per-detector minimum (the `120 ms` value
+is a placeholder that `test_oracle_uniformity` calibrates above the slowest measured path at M13; see
+GUARDRAILS §1). C1 `UNSUPPORTED` (schema, pre-detector) is the sole exemption. No score, threshold,
+rule ID, matched substring, model name, window index or entity type crosses the boundary. All of it is in the audit record,
 retrievable at `GET /v1/admin/incident/{id}`. There is no `admin` scope — there are exactly three
 scopes (`chat`, `ingest`, `pii:reveal`) across two bearer tokens, and `/v1/admin/*` is gated on
 `pii:reveal` (`SAGP_API_TOKEN_REVEAL`).
@@ -564,7 +567,7 @@ SAGP_MAX_DOC_BYTES        = 52428800    SAGP_MAX_VAULT_ENTRIES = 2000
 timeout_injection_ms = 2000 → 503       timeout_retrieve_ms = 3000 → 503
 timeout_pii_ms       = 3000 → 503       timeout_llm_s       = 120  → 503
 timeout_embed_ms     = 2000 → 503       timeout_request_s   = 180  → 503
-rejection_latency_floor_ms = 120
+rejection_deadline_ms      = 120   # placeholder; fixed deadline (not a floor), calibrated at M13
 ```
 
 ### 8.2 `config/guardrails.yaml` — see GUARDRAILS.md §8.1
@@ -714,7 +717,7 @@ There is exactly one fail mode: closed. Every row below is specified to become a
 | Vault cap exceeded (> 2000 entries, C12) | Block — a vault-exhaustion input is an attack, not an accident | **400** | `block` |
 | Retrieved chunk contains a placeholder after neutralization (C16) | Drop the chunk + high-severity alarm (tamper signal). All chunks dropped → C15 refusal | 200 with `refuse_insufficient_context` | `refuse` |
 | Rate limit exceeded (C0) | Reject | **429** | `rate_limited` |
-| Any 400 from any detector | Byte-identical body, `≥ 120 ms` floor, fresh `incident_id` | **400** | `block` |
+| Any 400 from any detector | Byte-identical body, padded to the fixed rejection deadline (120 ms placeholder), fresh `incident_id` | **400** | `block` |
 
 Note the deliberate asymmetry: **400 means "we decided"**, **503 means "we could not decide"**. Both
 withhold the answer. Only the audit record distinguishes them, and only
@@ -743,23 +746,25 @@ withhold the answer. Only the audit record distinguishes them, and only
 | C13 embed query | 8–25 ms (ESTIMATE) | 60 ms (ESTIMATE) | bge-small, one 512-token window |
 | C14 Qdrant `query_points` (embedded) | 3–15 ms (ESTIMATE) | 40 ms (ESTIMATE) | ≤ 50k vectors. `PROFILE=demo` adds loopback + VM hop |
 | C16–C17 chunk sanitize + batch mask | 60–250 ms (ESTIMATE) | 600 ms (ESTIMATE) | 6 chunks through `BatchAnalyzerEngine`, `batch_size=6`, `n_process=1` |
-| C18/C20 prompt assembly + trim | < 5 ms (ESTIMATE) | 10 ms (ESTIMATE) | |
+| C18 prompt assembly + budget trim | < 5 ms (ESTIMATE) | 10 ms (ESTIMATE) | |
 | C19 assembled-context re-scan | 100–300 ms (ESTIMATE) | 700 ms (ESTIMATE) | 4–5 windows, up to 2 reassembly iterations |
 | **C21 Ollama generation** | **4–15 s (ESTIMATE)** | **40 s (ESTIMATE)** | `llama3.2:3b-q4_K_M`, `num_predict=512`, CPU/Metal on M2. Timeout 120 s |
 | C22a–C22d output guard | 40–200 ms (ESTIMATE) | 500 ms (ESTIMATE) | two Presidio passes over the completion (C22b + C22c) |
 | C23–C26 rehydrate, audit, fsync, clear | 3–15 ms (ESTIMATE) | 40 ms (ESTIMATE) | `fsync` dominates |
 | **Total guardrail overhead** | **~0.3–1.1 s (ESTIMATE)** | **~3 s (ESTIMATE)** | |
 | **Total request** | **~5–16 s (ESTIMATE)** | **~43 s (ESTIMATE)** | |
-| Rejected request (any 400) | **≥ 120 ms, by construction** | ≥ 120 ms | `constant_time_floor` — a fixed floor, not an estimate |
+| Rejected request (any detector 400) | **= the rejection deadline, by construction** | = deadline | `constant_time_floor` — a fixed deadline (120 ms placeholder, calibrated at M13), not an estimate |
 
 Two structural conclusions are robust to a 2–3× error in the absolute numbers, and only these should be
 relied on before M13: **(1)** guardrail overhead is a small fraction of generation time, so the security
 posture is not the reason the system feels slow; **(2)** within the guardrail budget the injection
 classifier dominates, so it is the only stage where optimisation would be worth the risk of touching.
 
-The ≥ 120 ms rejection floor is not a performance figure — it is a security control. It must exceed the
-p95 of the *fastest* rejecting stage (C3, a few ms) by a wide enough margin that no detector is
-distinguishable by timing.
+The rejection deadline is not a performance figure — it is a security control. It is a **fixed pad
+every detector reject terminates at**, and it must exceed the p95 of the *slowest* rejecting stage
+(the injection classifier, tens to low-hundreds of ms) so that no detector is distinguishable by
+timing. A value that only exceeds the *fastest* stage would leak the slower ones — which is why 120 ms
+is a placeholder that `test_oracle_uniformity` calibrates from measurement at M13, not a fixed truth.
 
 ---
 
@@ -804,7 +809,7 @@ class Guardrail(Protocol):
 Rules: the stage must be **fail-closed by default** — any exception, timeout or partial result returns
 `Decision.UNAVAILABLE` and never `ALLOW`. It must not leak into the client-facing body; its reason code
 goes only to the audit record. It must emit a `GuardrailDecision` with `elapsed_ms`. If it blocks, it
-blocks through the same uniform 400 surface with the same timing floor — a new status code or a distinct
+blocks through the same uniform 400 surface with the same fixed rejection deadline — a new status code or a distinct
 message reintroduces the detector oracle that BLUEPRINT §0 row 12 removed. Add its position to
 `tests/unit/test_pipeline_order.py`; ordering is a correctness property (§4.1), not a preference.
 

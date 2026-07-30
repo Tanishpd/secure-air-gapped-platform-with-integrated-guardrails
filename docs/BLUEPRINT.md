@@ -600,7 +600,7 @@ Guardrails run as **FastAPI dependencies**, never `BaseHTTPMiddleware` (Starlett
 | C14 | `query_points(collection, query=vec, limit=6, score_threshold=0.35, query_filter=must_not guard.verdict=="quarantined", with_payload=True)` | store exception or > `timeout_retrieve_ms=3000` → **503** |
 | C15 | If no hit ≥ `STRONG=0.50` → return `refusal.txt`, **no LLM call**, 200 with `decision="refuse_insufficient_context"` | deterministic, auditor-testable |
 | C16 | Per chunk: `normalize()` → `neutralize_placeholders()`; `n > 0` → **drop the chunk** + high-severity alarm (tamper signal) | — |
-| C17 | `BatchAnalyzerEngine.analyze_iterator(chunks, "en", batch_size=6, n_process=1)` with EGRESS profile (0.35); `anonymize` each with the **same vault**, `origin=f"doc:{sha}"`. **BLOCK list NOT applied to chunks.** | exception → **503** |
+| C17 | `BatchAnalyzerEngine.analyze_iterator(chunks, "en", batch_size=6, n_process=1)` with EGRESS profile (0.35); `anonymize` each with the **same vault**, `origin=f"doc:{sha}"`. BLOCK-list **rejection** NOT applied to chunks — but block-tier entities ARE masked here (binary for CREDIT_CARD/IN_AADHAAR, egress 0.40 otherwise; §5.1 in GUARDRAILS), so nothing leaks unmasked. | exception → **503** |
 | C18 | `prompt.py` **budget-selects** masked chunks by retrieval score until under `SAGP_MAX_CTX_CHARS=7000` (the trim happens **here, before the re-scan**, so the scanned string is the delivered string), then assembles: `nonce = secrets.token_hex(8)`; each masked chunk wrapped in `<<<UNTRUSTED_DOCUMENT_{nonce}_S{i}>>> … <<</UNTRUSTED_DOCUMENT_{nonce}_S{i}>>>`. **No datamarking.** Retrieved content goes in the **user** role, never system. | budget leaves 0 chunks → C15 refusal |
 | C19 | **Single** injection re-scan of the assembled masked context, threshold 0.90, adjacent-window corroboration (4–5 windows, so it is operative here) | hit → drop the highest-scoring chunk, **re-apply the C18 budget**, reassemble, rescan (max 2 iterations). All chunks dropped → C15 refusal. Exception → **503** |
 | C20 | Assert the re-scanned assembled context is byte-identical to the user-role payload C21 sends (the `test_final_bytes_were_scanned` invariant, §9.4). Prevents Ollama silently truncating the closing delimiter | any divergence is a bug, not a runtime path |
@@ -1019,7 +1019,7 @@ timeout_embed_ms      = 2000  -> 503
 timeout_retrieve_ms   = 3000  -> 503
 timeout_llm_s         = 120   -> 503
 timeout_request_s     = 180   -> 503
-rejection_latency_floor_ms = 120
+rejection_deadline_ms      = 120   # placeholder; fixed deadline (not a floor), calibrated at M13 (§9.4)
 
 uvicorn --workers 1
 anyio.CapacityLimiter(2) around every sync guardrail call

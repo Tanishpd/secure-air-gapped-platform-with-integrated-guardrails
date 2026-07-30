@@ -81,7 +81,7 @@ C22c is the whole trick. The dangerous case is a response whose raw form hides P
 .venv/bin/pytest tests/integration/test_output_guard.py -q -k divergence   # fails closed
 ```
 
-Gates (specifications — no make target or test exists yet): `make smoke` check `[13/14]` is specified to require a normalization-triggered rejection to return the uniform 400 body with an `incident_id` and at least 120 ms of latency. `tests/security/test_oracle_uniformity.py` is specified to assert that every detector — normalization, heuristics, classifier, PII BLOCK-list — produces a byte-identical response and the same timing floor, so that a caller cannot tell C3 from C10.
+Gates (specifications — no make target or test exists yet): `make smoke` check `[13/14]` is specified to require a normalization-triggered rejection to return the uniform 400 body with an `incident_id` and at least 120 ms of latency. `tests/security/test_oracle_uniformity.py` is specified to assert that every detector — normalization, heuristics, classifier, PII BLOCK-list — produces a byte-identical response and terminates at the same fixed rejection deadline (not a per-detector minimum; calibrated above the slowest detector at M13), so that a caller cannot tell C3 from C10.
 
 ---
 

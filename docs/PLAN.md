@@ -79,7 +79,7 @@ Every row below was a genuine contradiction between subsystem specs. One answer 
 | **Ingest PII policy** | `ingest_mode=raw` — store real chunk text, **mask at retrieval** | Masking at ingest collides placeholders across identities and destroys retrieval (raw queries vs masked corpus) |
 | Masking scheme | Custom `VaultPlaceholder` operator → `<PERSON_1>`; **request-scoped, in-memory, never persisted** | Presidio's `encrypt`/`decrypt` ties ciphertext to a long-lived key; a request vault cannot leak across requests |
 | PDF | `pypdf==6.14.2` (BSD-3) | **PyMuPDF rejected on AGPL-3.0 §13** — it would infect a compliance-themed template |
-| Blocked-request response | **HTTP 400, identical body and ≥120 ms timing floor for every detector** | A 400-vs-403 split, or a returned score, is a detector oracle an attacker tunes against |
+| Blocked-request response | **HTTP 400, identical body and a fixed rejection deadline (120 ms placeholder, calibrated above the slowest detector at M13) for every detector** | A 400-vs-403 split, a returned score, or a stage-dependent latency is a detector oracle an attacker tunes against |
 | Conversation | **Single-turn.** `messages` array len > 1 → 400 | The vault is request-scoped; multi-turn would need cross-turn identity resolution |
 | Namespace | `src/sagp/`, one env prefix `SAGP_` | Four trees and five prefixes silently broke each other's lookups |
 
@@ -190,10 +190,11 @@ C14 Qdrant query_points, MIN 0.35, must_not quarantined   store error/timeout �
 C15 refusal gate: no hit ≥ STRONG 0.50             → refusal.txt, NO LLM call, 200 refuse_insufficient_context
 C16 per chunk: normalize() → neutralize_placeholders()    placeholder found → drop chunk + tamper alarm
 C17 mask PII in retrieved chunks into the SAME vault (EGRESS profile, no BLOCK list)
-C18 assemble context: masked chunks wrapped in per-request nonce delimiters marked UNTRUSTED
-C19 single re-scan of the ASSEMBLED MASKED context, threshold 0.90  hit → drop top chunk, reassemble,
-    rescan (max 2 iterations); all chunks dropped → C15 refusal
-C20 context char budget 7000 — drop lowest-scoring chunks until under
+C18 budget-select chunks by score under MAX_CTX_CHARS=7000 (trim BEFORE the scan), then assemble:
+    masked chunks wrapped in per-request nonce delimiters marked UNTRUSTED
+C19 single re-scan of the ASSEMBLED MASKED context, threshold 0.90  hit → drop top chunk, re-apply
+    budget, reassemble, rescan (max 2 iterations); all chunks dropped → C15 refusal
+C20 assert the re-scanned context is byte-identical to what C21 sends (test_final_bytes_were_scanned)
 --- generation ---
 C21 Ollama generate (buffered, not streamed)       timeout 120 s → 503
 --- egress ---

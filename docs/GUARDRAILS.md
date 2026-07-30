@@ -412,9 +412,14 @@ Engine: `presidio-analyzer` / `presidio-anonymizer` `==2.2.364`, `spacy==3.8.13`
 
 ### 5.1 BLOCK list — presence in a prompt rejects the request
 
-Applied at C10, to the **user prompt only**. Not applied to document chunks (I6) and not applied to
+The BLOCK **rejection** is applied at C10, to the **user prompt only** — and over the C5 decode set
+`{neutral, *decoded-normalized}`, not just `neutral`, so an encoded credential (a base64 card number,
+a hex-encoded key) cannot slip past it. The rejection is not applied to document chunks (I6) or
 retrieved context (C17): a handbook that legitimately contains an IFSC code should be ingestable, and
-blocking retrieval would be a denial-of-service on the corpus.
+*blocking* retrieval would be a denial-of-service on the corpus. But "not rejected" does **not** mean
+"passed through in the clear" — on the C17 and C22b surfaces these entities are **masked** into the
+vault instead (see the block-list-on-egress note below), so a card number in a retrieved chunk or in
+the model's answer still never leaves the box unmasked.
 
 | Entity | Recognizer | Ingress threshold | Notes |
 |---|---|---|---|
@@ -761,8 +766,12 @@ The cost is latency: the user waits for the full generation before seeing anythi
 this budget that is seconds, not minutes, and it is the correct trade for a system whose entire claim
 is that nothing unscanned crosses the boundary. Buffering is also what makes
 `test_final_bytes_were_scanned` possible — the single most important test in the planned suite is
-specified to assert that the exact string sent to Ollama *and* the exact string returned to the
-caller were each arguments to a `scan()` call within the same request. It has not been written.
+specified to assert that the **user-role payload** sent to Ollama (the masked question plus the
+assembled retrieved context) *and* the exact string returned to the caller were each arguments to a
+`scan()` call within the same request. It is satisfiable because C18 trims the context to budget
+*before* the C19 re-scan (BLUEPRINT §5.7), so the scanned string is the delivered string; the static
+system prompt is deliberately never scanned and is excluded from the assertion by construction. It has
+not been written (lands at M10; see BLUEPRINT §9.4).
 
 ---
 
@@ -885,7 +894,7 @@ context:                          # G4
   nonce_bytes: 8                  # secrets.token_hex(8), per request, never reused
   datamarking: false              # U+2581 spotlighting — dropped, ADR-0009. Do not re-enable.
   role: user                      # retrieved content is NEVER placed in the system role
-  max_ctx_chars: 7000             # SAGP_MAX_CTX_CHARS; trim lowest-scoring chunks first
+  max_ctx_chars: 7000             # SAGP_MAX_CTX_CHARS; trim lowest-scoring chunks at C18, BEFORE the C19 re-scan
   rescan:
     scans_total: 1                # once here + once per chunk at ingest = two scans in the system
     max_iterations: 2             # drop highest-scoring chunk, reassemble, rescan

@@ -41,8 +41,8 @@ The demo narrative, in six steps:
    that actually reached Ollama contained `<EMAIL_ADDRESS_1>` and not the real address. The mapping
    lives in a request-scoped, in-memory vault that is cleared in a `finally` block and never persisted.
 6. **Send `Ignore all previous instructions`** and get `400 PROMPT_REJECTED` with an `incident_id`,
-   an opaque body carrying no score or rule name, and a ≥120 ms timing floor so the rejection surface
-   is not a detector oracle.
+   an opaque body carrying no score or rule name, and a fixed rejection deadline (120 ms placeholder)
+   so the rejection surface is not a detector oracle.
 
 Steps 5 and 6 are the brief's literal claim. They become demonstrable at milestone **M10** — see
 [Status](#status).
@@ -334,9 +334,9 @@ and the Docker VM are separate processes outside both guard layers — see
 | Egress PII | `C22b`–`C22c` | PII in the response at threshold 0.35, plus a normalized-divergence check that fails closed if normalizing the response reveals *more* entities | 503 on analyzer error |
 | Citation check | `C22d` | `[Sn, p.X]` markers pointing outside the supplied blocks or pages | Strip (`warn`) or refuse (`strict`) |
 
-Every 400 returns exactly
+Every detector 400 returns exactly
 `{"error":{"code":"PROMPT_REJECTED","message":"Your request was rejected by the security policy.","incident_id":"<uuid4>"}}`
-padded to a ≥120 ms floor. No score, threshold, rule ID, matched substring, model name, or entity type
+padded to a fixed rejection deadline (120 ms placeholder, calibrated above the slowest detector at M13 — not a per-detector minimum). No score, threshold, rule ID, matched substring, model name, or entity type
 crosses the boundary. All of it is in the audit record, retrievable at
 `GET /v1/admin/incident/{id}`, which is gated on the `pii:reveal` scope. There is no `admin` scope;
 the three scopes are `chat`, `ingest` and `pii:reveal`, across two bearer tokens.
