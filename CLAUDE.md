@@ -272,13 +272,13 @@ Reasonable-sounding changes that are wrong *here*:
 
 ## 10. Current status
 
-**As of 2026-07-27 this repository contains documentation only. No code has been written.**
+**As of 2026-07-30: M-DOCS, M0 and M1 are complete. Guardrail/RAG/gateway code (M2+) is not built.**
 
-- **Present:** `README.md`, `CLAUDE.md`, `THIRD_PARTY_LICENSES.md`, `NOTICE`, `LICENSE`, `.gitignore`, `docs/{BLUEPRINT,PLAN,ARCHITECTURE,THREAT_MODEL,GUARDRAILS,AIRGAP_RUNBOOK,COMPLIANCE,EVALUATION,OPERATIONS,LIMITATIONS}.md`, and `docs/adr/0001`–`0009`. All of those documents are written; none is "planned".
-- **Absent:** `src/`, `tests/`, `scripts/`, `config/`, `Makefile`, `docker-compose.yml`, `pyproject.toml`, `docs/metrics/`.
-- **Version control:** the repository is initialised and the documentation corpus is committed on `main`. No code has ever been committed, so the git history is not evidence that anything was built.
+- **M0 (done):** `src/sagp/` skeleton (config/errors/types/version + subpackage tree), `pyproject.toml`, `Makefile`, ruff+mypy, `tests/` — `make lint typecheck test` green on Python 3.11.15.
+- **M1 (done):** `artifacts.lock`, `requirements.provision.txt`, `scripts/provision/01..10`, `netguard/{phase,manifest}.py`, `make provision`/`verify-manifest`. Models are provisioned on this host and `MANIFEST.json` is signed + committed. **`llama3:8b` was skipped** (disk-constrained; does not fit in 8 GB anyway).
+- **Absent (M2+):** the guardrail pipeline, RAG, LLM client, FastAPI gateway, the egress guard's L1/L2 install, `config/*.yaml`, `docker-compose.yml`, `docs/metrics/`.
 
-**Nothing in this corpus has been measured — no metric, no latency, no RAM figure, no recall number.** The only facts established on this host are the environment facts in PLAN §1: 8 GB RAM, 5.9 GB free disk (**provisioning needs ≥ 25 GB and cannot complete until space is freed**), Docker 29.5.3 with the daemon stopped, Ollama client 0.30.10 with no server and no models pulled. Every RAM figure in BLUEPRINT §7 except the 3.00 GB macOS baseline is an ESTIMATE, and the INT8 classifier RSS (0.30 GB) is **UNVERIFIED and blocking** — see **OQ-1**.
+**Two figures are now MEASURED on this host (M1), the rest of §7 remains ESTIMATE:** the injection classifier is **FP32 ONNX** (INT8 dynamic quant *inverts* this DeBERTa-v3 — OQ-2 resolved), and its session RSS is **0.30 GB measured** (OQ-1 resolved; ORT mmaps the weights, so the FP32 fallback does not change the RAM budget). The embedding parity gate passed at 1.6e-07. Every other RAM/latency/recall number is still unmeasured. Environment facts (PLAN §1): 8 GB RAM (hard ceiling), Apple M2, Python 3.11.15.
 
 This warning scopes over **every document listed above, without exception** — README, this file, BLUEPRINT, PLAN, ARCHITECTURE, THREAT_MODEL, GUARDRAILS, AIRGAP_RUNBOOK, COMPLIANCE, EVALUATION, OPERATIONS, LIMITATIONS and all nine ADRs. Every latency, RAM, recall, precision and FPR figure in any of them is an ESTIMATE, a PROJECTION, a build-gate TARGET, or an unverified arithmetic derivation; every RAM total must name the profile it assumes (6.75 GB = embedded, 7.60 GB = `PROFILE=demo`). Do not launder any of them into a fact, and never cite one without its marker.
 
@@ -286,9 +286,9 @@ This warning scopes over **every document listed above, without exception** — 
 
 ```
 M-DOCS  all markdown into the repo, git init         ← DONE
-M0      skeleton: src/sagp tree, Settings, errors, types, Makefile   ← next
-M1      PROVISION EVERYTHING (online, one-way door, longest single item)
-M2      audit spine — lands BEFORE any guardrail exists
+M0      skeleton: src/sagp tree, Settings, errors, types, Makefile   ← DONE
+M1      PROVISION EVERYTHING (online, one-way door, longest single item)  ← DONE
+M2      audit spine — lands BEFORE any guardrail exists   ← next
 M3 normalizer · M4 PII · M5 injection · M6 metrics gate · M7 LLM client
 M8 ingestion · M9 retrieval · M10 FastAPI gateway   ← first demoable slice
 M11 net-guard · M12 indirect injection · M13 THE DEMONSTRATION (offline, paired negative controls)

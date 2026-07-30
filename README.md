@@ -129,8 +129,8 @@ implementation. The build order and the definition of each milestone live in
 | Done | Milestone | Deliverable | Needs network |
 |---|---|---|---|
 | [x] | **M-DOCS** *(complete)* | Every markdown file written into the repo, plus `.gitignore`, `LICENSE`, `NOTICE`; `git init` run and the corpus committed. Documentation only — no code | no |
-| [ ] | M0 | Skeleton: `src/sagp/` tree, `pyproject.toml`, `Settings`, `errors.py`, `types.py`, Makefile | no |
-| [ ] | M1 | **PROVISION EVERYTHING** — `artifacts.lock`, `scripts/provision/01..10`, four gates, `MANIFEST.json` | **YES — online only** |
+| [x] | M0 *(done)* | Skeleton: `src/sagp/` tree, `pyproject.toml`, `Settings`, `errors.py`, `types.py`, Makefile — `make lint typecheck test` green | no |
+| [x] | M1 *(done)* | **PROVISION EVERYTHING** — `artifacts.lock`, `scripts/provision/01..10`, gates, signed `MANIFEST.json`. Classifier is **FP32 ONNX** (INT8 rejected — inverts this model, OQ-2); `llama3:8b` skipped | **done online** |
 | [ ] | M2 | Audit spine: events, hashing, sink, verify, scrub, quarantine, redactors | no |
 | [ ] | M3 | Normalizer, placeholders, heuristics, deobfuscation | no |
 | [ ] | M4 | PII guardrail: Presidio factory, `SealedEmailRecognizer`, vault, aliases | no |

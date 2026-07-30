@@ -25,6 +25,8 @@
 # `models/*` (not `models/`) so the two committed files below stay reachable.
 models/*
 !models/MANIFEST.json
+!models/MANIFEST.json.sha256
+!models/MANIFEST.json.sig
 !models/README.md
 
 # ---------------------------------------------------------------------------

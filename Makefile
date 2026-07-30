@@ -9,11 +9,13 @@ VENV    := .venv
 VENV_PROVISION := .venv-provision
 PIP     := "$(VENV)/bin/pip"
 PYTHON  := "$(VENV)/bin/python"
+PROV_PY := "$(VENV_PROVISION)/bin/python"
 RUFF    := "$(VENV)/bin/ruff"
 MYPY    := "$(VENV)/bin/mypy"
 PYTEST  := "$(VENV)/bin/pytest"
 
-.PHONY: help doctor venvs install lint format typecheck test clean
+.PHONY: help doctor venvs install install-provision lint format typecheck test clean \
+        provision verify-manifest
 
 help:  ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -34,6 +36,10 @@ install:  ## Install the runtime closure + [dev] into .venv (online)
 	$(PIP) install --upgrade pip
 	$(PIP) install -e '.[dev]'
 
+install-provision:  ## Install the provisioning toolchain into .venv-provision (online)
+	"$(VENV_PROVISION)/bin/pip" install --upgrade pip
+	"$(VENV_PROVISION)/bin/pip" install -r requirements.provision.txt
+
 lint:  ## ruff check + format --check
 	$(RUFF) check src tests
 	$(RUFF) format --check src tests
@@ -47,6 +53,23 @@ typecheck:  ## mypy (strict) over src/sagp
 
 test:  ## Unit + integration suites (FakeLLM/FakeScorer, no models)
 	$(PYTEST) -q
+
+provision:  ## PROVISION EVERYTHING (online, one-way door): steps 01..10 in order
+	@$(PYTHON) -m sagp.netguard.phase to-provision
+	bash scripts/provision/01_wheelhouse.sh
+	$(PROV_PY) scripts/provision/02_hf_models.py
+	$(PYTHON) scripts/provision/03_spacy.py
+	bash scripts/provision/04_ollama.sh
+	bash scripts/provision/05_docker.sh
+	$(PROV_PY) scripts/provision/06_quantize.py
+	$(PROV_PY) scripts/provision/07_gates.py
+	$(PYTHON) scripts/provision/08_tldextract.py
+	$(PYTHON) scripts/provision/09_secrets.py
+	$(PYTHON) scripts/provision/10_manifest.py
+	@echo "provision complete — run 'make verify-manifest'"
+
+verify-manifest:  ## Full manifest verification (recompute every hash + signature)
+	$(PYTHON) -m sagp.netguard.manifest
 
 clean:  ## Remove venvs and caches
 	rm -rf "$(VENV)" "$(VENV_PROVISION)" .pytest_cache .ruff_cache .mypy_cache
