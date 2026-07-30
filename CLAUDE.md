@@ -272,11 +272,12 @@ Reasonable-sounding changes that are wrong *here*:
 
 ## 10. Current status
 
-**As of 2026-07-30: M-DOCS, M0 and M1 are complete. Guardrail/RAG/gateway code (M2+) is not built.**
+**As of 2026-07-30: M-DOCS, M0, M1 and M2 are complete. Guardrail/RAG/gateway code (M3+) is not built.**
 
 - **M0 (done):** `src/sagp/` skeleton (config/errors/types/version + subpackage tree), `pyproject.toml`, `Makefile`, ruff+mypy, `tests/` — `make lint typecheck test` green on Python 3.11.15.
 - **M1 (done):** `artifacts.lock`, `requirements.provision.txt`, `scripts/provision/01..10`, `netguard/{phase,manifest}.py`, `make provision`/`verify-manifest`. Models are provisioned on this host and `MANIFEST.json` is signed + committed. **`llama3:8b` was skipped** (disk-constrained; does not fit in 8 GB anyway).
-- **Absent (M2+):** the guardrail pipeline, RAG, LLM client, FastAPI gateway, the egress guard's L1/L2 install, `config/*.yaml`, `docker-compose.yml`, `docs/metrics/`.
+- **M2 (done):** the audit spine — `audit/{events,hashing,sink,verify,scrub,quarantine,redactors}.py` + `utils/ids.py`, `make audit-verify`. Closed `AuditEvent` schema, hash-chained JSONL (tamper detected at the right index), HMAC correlation tokens, write-time scrub. It lands BEFORE any guardrail so decisions have somewhere tamper-evident to record.
+- **Absent (M3+):** the guardrail pipeline, RAG, LLM client, FastAPI gateway, the egress guard's L1/L2 install, `config/*.yaml`, `docker-compose.yml`, `docs/metrics/`.
 
 **Two figures are now MEASURED on this host (M1), the rest of §7 remains ESTIMATE:** the injection classifier is **FP32 ONNX** (INT8 dynamic quant *inverts* this DeBERTa-v3 — OQ-2 resolved), and its session RSS is **0.30 GB measured** (OQ-1 resolved; ORT mmaps the weights, so the FP32 fallback does not change the RAM budget). The embedding parity gate passed at 1.6e-07. Every other RAM/latency/recall number is still unmeasured. Environment facts (PLAN §1): 8 GB RAM (hard ceiling), Apple M2, Python 3.11.15.
 
@@ -288,8 +289,8 @@ This warning scopes over **every document listed above, without exception** — 
 M-DOCS  all markdown into the repo, git init         ← DONE
 M0      skeleton: src/sagp tree, Settings, errors, types, Makefile   ← DONE
 M1      PROVISION EVERYTHING (online, one-way door, longest single item)  ← DONE
-M2      audit spine — lands BEFORE any guardrail exists   ← next
-M3 normalizer · M4 PII · M5 injection · M6 metrics gate · M7 LLM client
+M2      audit spine — lands BEFORE any guardrail exists   ← DONE
+M3 normalizer · M4 PII · M5 injection · M6 metrics gate · M7 LLM client  ← M3 next
 M8 ingestion · M9 retrieval · M10 FastAPI gateway   ← first demoable slice
 M11 net-guard · M12 indirect injection · M13 THE DEMONSTRATION (offline, paired negative controls)
 M14 hardening · M15 documentation revisited with real measurements

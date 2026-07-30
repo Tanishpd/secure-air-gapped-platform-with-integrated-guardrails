@@ -131,7 +131,7 @@ implementation. The build order and the definition of each milestone live in
 | [x] | **M-DOCS** *(complete)* | Every markdown file written into the repo, plus `.gitignore`, `LICENSE`, `NOTICE`; `git init` run and the corpus committed. Documentation only — no code | no |
 | [x] | M0 *(done)* | Skeleton: `src/sagp/` tree, `pyproject.toml`, `Settings`, `errors.py`, `types.py`, Makefile — `make lint typecheck test` green | no |
 | [x] | M1 *(done)* | **PROVISION EVERYTHING** — `artifacts.lock`, `scripts/provision/01..10`, gates, signed `MANIFEST.json`. Classifier is **FP32 ONNX** (INT8 rejected — inverts this model, OQ-2); `llama3:8b` skipped | **done online** |
-| [ ] | M2 | Audit spine: events, hashing, sink, verify, scrub, quarantine, redactors | no |
+| [x] | M2 *(done)* | Audit spine: closed `AuditEvent`, hash-chained JSONL (tamper-evident), HMAC correlation tokens, write-time scrub, `make audit-verify` | no |
 | [ ] | M3 | Normalizer, placeholders, heuristics, deobfuscation | no |
 | [ ] | M4 | PII guardrail: Presidio factory, `SealedEmailRecognizer`, vault, aliases | no |
 | [ ] | M5 | Injection guardrail: label resolution, ONNX backend, scanner, boot self-test | no |

@@ -43,7 +43,9 @@ vendor/
 # carry hashed correlators, request IDs and timestamps that are host- and
 # operator-specific. They are operational evidence, not source. Directory is
 # 0700 and the JSONL files are 0600 on disk.
-audit/
+# Anchored to the repo root with a leading slash so it does NOT also match the
+# source package src/sagp/audit/ (a bare `audit/` matches at any depth).
+/audit/
 
 # ---------------------------------------------------------------------------
 # Ingested documents and the vector store
@@ -136,3 +138,6 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# Hypothesis example database / cache
+.hypothesis/
