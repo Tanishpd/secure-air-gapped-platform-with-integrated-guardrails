@@ -1,11 +1,25 @@
-# ADR-0004: ONNX Runtime only at runtime, with INT8 dynamic quantization behind a hard parity gate
+# ADR-0004: ONNX Runtime only at runtime — FP32 (INT8 rejected at M1 by the parity gate)
 
-Records how the injection classifier is executed on the sealed host — ONNX Runtime with no torch — how it is quantized, and the two open questions that could still force the fallback ladder.
+Records how the injection classifier is executed on the sealed host — ONNX Runtime with no torch — and the outcome of the INT8 quantization attempt.
 
-- **Status:** Accepted
-- **Date:** 2026-07-27
+- **Status:** Accepted; **INT8 branch REJECTED at M1 — runtime classifier is FP32 ONNX.**
+- **Date:** 2026-07-27 (decision); **2026-07-30 (M1 measurement)**
 - **Deciders:** Project architect
 - **Supersedes:** —
+
+> **M1 OUTCOME (measured, 2026-07-30) — this supersedes the INT8 body below.**
+> The parity gate (`07_gates.py`) ran and **INT8 dynamic quantization FAILED**: on this
+> `deberta-v3-base-prompt-injection-v2` checkpoint, `quantize_dynamic` (default op set, QInt8)
+> **inverts the classifier** — measured `max |ΔP(INJECTION)| = 0.98`, **3 label flips**; the INT8
+> model scores the attack *"Ignore all previous instructions"* as **0.02 INJECTION (i.e. SAFE)**.
+> Using it would silently admit every attack. The gate correctly refused and the fallback ladder
+> selected **FP32 ONNX**, which is verified correct (attacks → INJECTION 1.0, benign → SAFE 1.0).
+> This resolves **OQ-2** (INT8 parity fails) and reshapes **OQ-1**: the *FP32* session RSS was
+> measured in a fresh interpreter at **0.30 GB** — the same as the old INT8 estimate, because ORT
+> mmaps the weights — so the RAM budget is **unchanged** by the fallback (the "FP32 costs 0.80 GB"
+> estimate below is wrong; measured is 0.30 GB). The runtime reads
+> `models/derived/classifier_choice.json` to know which model to load. The broken INT8 artifact is
+> deleted by the gate; `06_quantize.py` still produces it each run so the gate re-proves the rejection.
 
 ## Context
 

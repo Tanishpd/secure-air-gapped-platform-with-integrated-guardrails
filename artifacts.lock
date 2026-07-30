@@ -1,0 +1,110 @@
+# artifacts.lock — every model / image the sealed system runs, pinned by
+# immutable revision + expected byte size. Read by scripts/provision/* to fetch,
+# and by 10_manifest.py to cross-check what actually landed. Human-edited;
+# changing a pin requires an ADR in the same commit (CLAUDE.md invariant 12).
+#
+# `llama3:8b` is intentionally ABSENT: it does not fit in 8 GB RAM at runtime,
+# and this host is disk-constrained (AIRGAP_RUNBOOK pre-provision checklist).
+# Add it back only after freeing to >= 25 GB.
+
+schema = 1
+generated_by = "M1"
+
+# ---------------------------------------------------------------------------
+# HuggingFace models (revisions + sizes verified live, BLUEPRINT §2.3)
+# ---------------------------------------------------------------------------
+[[hf_model]]
+id = "protectai/deberta-v3-base-prompt-injection-v2"
+revision = "90c9989b1a342275dd0d1a95aad283c04e075671"
+local_dir = "models/hf/injection"
+# safetensors is fetched ONLY for the FP32<->INT8 parity gate; excluded from the
+# runtime manifest subset (07_gates.py compares against it, then it can be dropped).
+allow_patterns = [
+  "config.json",
+  "onnx/config.json",
+  "onnx/model.onnx",
+  "onnx/tokenizer.json",
+  "onnx/tokenizer_config.json",
+  "onnx/special_tokens_map.json",
+  "onnx/added_tokens.json",
+  "onnx/spm.model",
+  "model.safetensors",
+]
+license = "apache-2.0"
+[hf_model.bytes]
+"onnx/model.onnx" = 738563188
+"model.safetensors" = 737719272
+
+[[hf_model]]
+id = "BAAI/bge-small-en-v1.5"
+revision = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+local_dir = "models/hf/bge-small-en-v1.5"
+allow_patterns = [
+  "config.json",
+  "onnx/model.onnx",
+  "tokenizer.json",
+  "tokenizer_config.json",
+  "special_tokens_map.json",
+  "vocab.txt",
+  "1_Pooling/config.json",
+]
+license = "mit"
+[hf_model.bytes]
+"onnx/model.onnx" = 133093490
+
+# ---------------------------------------------------------------------------
+# spaCy pipelines (installed as pip wheels; BLUEPRINT §2.4)
+# ---------------------------------------------------------------------------
+[[spacy_model]]
+name = "en_core_web_md"
+version = "3.8.0"
+url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl"
+bytes = 33480380
+role = "default"
+
+[[spacy_model]]
+name = "en_core_web_sm"
+version = "3.8.0"
+url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+bytes = 12806118
+role = "tests-and-low-mem"
+
+# ---------------------------------------------------------------------------
+# Ollama tags (BLUEPRINT §2.5). Pulled into $ROOT/models/ollama.
+# ---------------------------------------------------------------------------
+[[ollama_model]]
+tag = "llama3.2:3b-instruct-q4_K_M"
+approx_bytes = 2019393189
+role = "default"
+
+[[ollama_model]]
+tag = "llama3.2:1b"
+approx_bytes = 1321000000
+quant = "Q8_0"
+role = "int8-parity-fallback"
+
+# ---------------------------------------------------------------------------
+# Docker images — PROFILE=demo / proof only. Skipped when the daemon is down
+# or PROFILE is unset (the default runtime backend is embedded Qdrant).
+# ---------------------------------------------------------------------------
+[[docker_image]]
+ref = "qdrant/qdrant:v1.18.3-unprivileged"
+local_tar = "models/docker/qdrant-v1.18.3-unprivileged.tar"
+role = "demo-proof-only"
+optional = true
+
+[[docker_image]]
+ref = "alpine:3"
+local_tar = "models/docker/alpine-3.tar"
+role = "egress-prober"
+optional = true
+
+# ---------------------------------------------------------------------------
+# Derived artifacts (produced by provisioning, not fetched)
+# ---------------------------------------------------------------------------
+[[derived]]
+kind = "onnx-int8"
+producer = "06_quantize.py"
+source = "models/hf/injection/onnx/model.onnx"
+path = "models/derived/injection-int8/model.onnx"
+gate = "07_gates.py: |dP(INJECTION)| < 0.05 and zero label flips; RSS <= 0.35 GB"

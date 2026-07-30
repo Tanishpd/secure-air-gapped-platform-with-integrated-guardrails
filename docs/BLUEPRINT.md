@@ -21,8 +21,8 @@
 | 2 | spaCy NER model (sm/md/lg) | **`en_core_web_md` 3.8.0** | `SAGP_SPACY_MODEL`. Provision all three wheels; md is default. Real 300-d vectors for OOV proper nouns (Indian names) at ~0.20 GB. |
 | 3 | transformers 4.57.6 vs 5.14.1 vs none; hub 0.x vs 1.25.1 | **Neither at runtime.** Two virtualenvs (§3). Runtime tokenizes with `tokenizers.Tokenizer.from_file()`. Provisioning venv carries `transformers==4.57.6` + `huggingface-hub==0.35.3` + `torch`. | Dissolves the `transformers<1.0 hub` vs `hub==1.25.1` ResolutionImpossible entirely, and removes ~0.45 GB of torch RSS from the sealed process. |
 | 4 | torch at runtime (repo spec) | **Deleted from runtime.** `[provision]` extra only. | repo's dependency list *is* rag's CONFIG A4 (8.32 GB) — does not fit. |
-| 5 | Injection runtime | **ONNX INT8 via `onnxruntime.InferenceSession`**, no torch, no `transformers`, no `optimum`. | Verified `onnxruntime-1.28.0-cp311-cp311-macosx_14_0_arm64.whl` = 19,130,506 B. |
-| 6 | `quantize_dynamic` op types | **Use the default** (`op_types_to_quantize=None`). Do **not** pass `["MatMul","Gather"]`. | Feasibility critique is correct: `Gather` is already in `CommonOpsRegistry` ⊂ `IntegerOpsRegistry`. Passing the list *narrows* the set. Default `weight_type=QuantType.QInt8`. |
+| 5 | Injection runtime | ONNX via `onnxruntime.InferenceSession`, no torch, no `transformers`, no `optimum`. **M1 outcome: FP32, not INT8** — INT8 dynamic quant inverts this checkpoint (OQ-2), so the parity gate selected FP32 ONNX. | Verified `onnxruntime-1.28.0-cp311-cp311-macosx_14_0_arm64.whl` = 19,130,506 B. FP32 session RSS measured 0.30 GB (§7). |
+| 6 | `quantize_dynamic` op types | **Use the default** (`op_types_to_quantize=None`). Do **not** pass `["MatMul","Gather"]`. **M1: even with the default op set, INT8 fails parity on this DeBERTa-v3 — the INT8 branch is rejected (OQ-2/ADR-0004); FP32 ONNX is the runtime model.** | `Gather` is already in `IntegerOpsRegistry`; passing the list narrows it. But default QInt8 still catastrophically degrades the disentangled attention — measured, not theoretical. |
 | 7 | INT8 fallback = `deberta-v3-small` | **Removed.** Fallback ladder is: INT8 → FP32 ONNX (kept on disk) → drop LLM to `llama3.2:1b`. | `protectai/deberta-v3-small-prompt-injection-v2` is `gated: auto`; a sealed system must not depend on a credential. |
 | 8 | Vector store (Chroma vs Qdrant) | **Qdrant only. Chroma deleted from the design.** Default runtime backend = **embedded** `QdrantClient(path=...)`, chosen on RAM grounds (6.75 GB projected embedded vs 7.60 GB projected with Docker, against an 8 GB ceiling). **`PROFILE=demo` (Docker `qdrant/qdrant:v1.18.3-unprivileged`) is the demonstration and proof path** — it is the network-isolation boundary this project exists to show and the path the proof harness targets. Its isolation properties are **untested** pending the Phase-0 spike (OQ-4, OQ-5); until `make spike-docker` runs, the word for the Docker path is "untested", never "isolated". | Keeps injection's `guard.verdict` payload filters and the quarantine collection; keeps the Docker VM out of the default RAM budget while retaining the demo path that actually demonstrates the boundary. |
 | 9 | Embedding model | **`BAAI/bge-small-en-v1.5` @ `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`**, ONNX, **CLS pooling → L2 normalize**, query prefix on queries only. | Verified `onnx/model.onnx` = **133,093,490 B**, ungated. MiniLM deleted from all lockfiles. |
@@ -760,7 +760,7 @@ Re-provisioning: `make unseal REASON="add pypdf 6.15.0"` → reconnect → `make
 | Ollama server + model weights (2.0) + KV @ q8_0 (0.24) + compute graph/runtime (0.35) | 2.59 | ESTIMATE — verify with `ollama ps` |
 | CPython 3.11 + FastAPI + uvicorn + pydantic | 0.15 | ESTIMATE |
 | onnxruntime runtime (one process, two sessions) | 0.12 | ESTIMATE |
-| DeBERTa-v3-base INT8 ONNX session | **0.30** | **UNVERIFIED — hard gate, see OQ-1** |
+| DeBERTa-v3-base **FP32** ONNX session (INT8 rejected — OQ-2) | **0.30** | **MEASURED at M1 (fresh interpreter; ORT mmaps weights). INT8 inverts the model, so FP32 is runtime — same RSS, budget unchanged.** |
 | bge-small-en-v1.5 ONNX session (133 MB fp32) | 0.18 | ESTIMATE |
 | spaCy `en_core_web_md` pipeline (24.0 MB vectors + weights) | 0.20 | ESTIMATE |
 | Presidio registry + compiled regexes | 0.03 | ESTIMATE |
@@ -1059,11 +1059,23 @@ ort SessionOptions: intra_op_num_threads=4, inter_op_num_threads=1   (leaves 4 c
 
 ## 14. OPEN QUESTIONS — genuinely unresolved, do not invent an answer
 
-**OQ-1 — INT8 size and RSS of the quantized DeBERTa. BLOCKING for the RAM budget.**
-`~190–220 MB on disk / ~0.30 GB RSS` is an arithmetic estimate from the 128,100 × 768 embedding table, not a measurement, and the Gather-op rationale it rested on was wrong. `scripts/provision/07_gates.py` must **measure** on-disk size and steady-state RSS of the loaded session and **fail provisioning** if RSS > 0.35 GB. If it fails: fall back to FP32 ONNX + embedded Qdrant + `llama3.2:1b`. Do not publish the §7 table until this number is measured.
+**OQ-1 — RSS of the injection classifier session. RESOLVED at M1 (measured 2026-07-30).**
+Moot for INT8 (rejected — see OQ-2). The **FP32 ONNX** session RSS, measured by `07_gates.py` in a
+fresh interpreter, is **0.30 GB** (ORT mmaps the 704 MB weights, so resident set ≪ file size). This is
+the same as the old INT8 arithmetic estimate, so **the fallback to FP32 does not change the RAM budget**
+— the §7 default total stays ~6.75 GB (embedded). The "FP32 costs 0.80 GB" figure in §7/ADR-0004 was a
+wrong estimate; the measured number is 0.30 GB. Dropping the 3B LLM to `llama3.2:1b` is therefore **not**
+required by the fallback.
 
-**OQ-2 — INT8 accuracy parity on DeBERTa-v3's disentangled attention.**
-`quantize_dynamic` with default op types also quantizes the **relative-position embedding Gather** — the most quantization-sensitive part of the architecture. The parity gate (`|Δ P(INJECTION)| < 0.05`, zero label flips over the full corpus) is a hard build gate, not a spot check. It may simply fail; the fallback ladder in §0 row 7 is the answer, and it must be exercised before sealing.
+**OQ-2 — INT8 accuracy parity on DeBERTa-v3's disentangled attention. RESOLVED at M1: it FAILS.**
+Measured 2026-07-30 by `07_gates.py`: `quantize_dynamic` (default op set, QInt8) on this checkpoint
+**inverts the classifier** — `max |ΔP(INJECTION)| = 0.98`, **3 label flips**; the INT8 model scores
+*"Ignore all previous instructions"* as 0.02 INJECTION (SAFE). The parity gate (`|ΔP| < 0.05`, zero
+flips) correctly refused. The fallback ladder selected **FP32 ONNX** (verified correct: attacks →
+INJECTION 1.0, benign → SAFE 1.0), which is the runtime classifier. `06_quantize.py` still produces the
+INT8 candidate each run so the gate re-proves the rejection; the runtime model is recorded in
+`models/derived/classifier_choice.json`. **The runtime injection classifier is FP32 ONNX, not INT8**
+— descriptive mentions of "INT8 ONNX" elsewhere in the corpus predate this measurement (M13 sweep).
 
 **OQ-3 — Exact token cost of the assembled prompt under llama3.2's BPE. (Owner: M7, with the LLM client.)**
 `SAGP_MAX_CTX_CHARS=7000` is a character proxy. There is no llama3 tokenizer in the runtime venv (`tokenizers` cannot load a GGUF vocab). Resolve at **M7** via the `prompt_eval_count` experiment: either (a) measure the char→token ratio empirically on the real corpus and set the cap conservatively, or (b) call `POST /api/generate` with `"raw": true, "num_predict": 0` and read `prompt_eval_count` to get an exact count from Ollama itself — **unverified that this returns a count without generating; the M7 experiment settles it.**
