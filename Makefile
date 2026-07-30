@@ -15,7 +15,7 @@ MYPY    := "$(VENV)/bin/mypy"
 PYTEST  := "$(VENV)/bin/pytest"
 
 .PHONY: help doctor venvs install install-provision lint format typecheck test clean \
-        provision verify-manifest
+        provision verify-manifest audit-verify
 
 help:  ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -70,6 +70,9 @@ provision:  ## PROVISION EVERYTHING (online, one-way door): steps 01..10 in orde
 
 verify-manifest:  ## Full manifest verification (recompute every hash + signature)
 	$(PYTHON) -m sagp.netguard.manifest
+
+audit-verify:  ## Walk the audit hash chain; exit 1 on any break
+	$(PYTHON) -m sagp.audit.verify
 
 clean:  ## Remove venvs and caches
 	rm -rf "$(VENV)" "$(VENV_PROVISION)" .pytest_cache .ruff_cache .mypy_cache
