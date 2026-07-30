@@ -182,7 +182,8 @@ it fits, with no margin. Both are PROJECTIONS, not measurements: every line item
 macOS baseline is an ESTIMATE, the INT8 classifier RSS is **UNVERIFIED**, and the totals are
 arithmetic over estimates — see **OQ-1** in [BLUEPRINT.md §14](docs/BLUEPRINT.md).
 Disk: ≈9.7 GB lean (includes the `llama3:8b` pull), ≈19.6 GB with both venvs and both wheelhouses,
-plus ~3 GB transient during quantization — see [BLUEPRINT.md §8](docs/BLUEPRINT.md).
+plus ~3 GB transient during quantization — see [BLUEPRINT.md §8](docs/BLUEPRINT.md). **Disk-constrained?**
+Skip the optional `llama3:8b` pull (it doesn't fit in 8 GB RAM anyway) and the requirement drops to ~15 GB.
 
 ---
 

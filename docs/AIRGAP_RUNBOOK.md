@@ -60,8 +60,11 @@ which one it tripped on. Do not start Phase A with an unchecked box.
 
 - [ ] **Free disk ≥ 25 GB** — `diskutil info / | grep -i "Free Space"` (also `df -g /`). The full closure is
       ~19.6 GB (BLUEPRINT §8, includes the `llama3:8b` pull), plus ~3 GB transient for quantization, plus headroom. `doctor` hard-fails below
-      `sum(artifacts.lock sizes) × 1.5 + 5 GB`. Last measurement on this host: **5,909,774,336 B (5.9 GB) —
-      provisioning cannot complete.** Free space first.
+      `sum(artifacts.lock sizes) × 1.5 + 5 GB`.
+      **Disk-constrained host (≥ 15 GB but < 25 GB free)?** Skip the optional `llama3:8b` pull at A4 — it is
+      4.7 GB, it does **not** fit in 8 GB RAM at runtime anyway (§7), and skipping it drops the requirement
+      to ~15 GB. This is the recommended path on the current host (22.5 GB free as of 2026-07-30). Keep `8b`
+      only if you have freed to ≥ 25 GB and specifically want to reproduce the does-not-fit failure.
 - [ ] **Python 3.11.15** — `~/.local/bin/python3.11 --version` → `Python 3.11.15`. The system default here
       is 3.14.6, too new for spaCy.
 - [ ] **Docker running — `PROFILE=demo`/`proof` only** — `open -a Docker` then
@@ -160,9 +163,12 @@ OLLAMA_MODELS="$PWD/models/ollama" ollama pull llama3.2:3b-instruct-q4_K_M
 
 **Expect:** `pulling manifest` → layer digests → `success`, then a printed blob digest list that A10 hashes.
 **Download 3.3 GB** — 2.0 GB (`llama3.2:3b-instruct-q4_K_M`) + 1.3 GB (`llama3.2:1b`, the parity-failure
-fallback). `llama3:8b` **is also pulled** — [PLAN](PLAN.md) §1 records it as an explicit operator choice so
-that it is one env var away — which adds **4.7 GB** (8.0 GB total for this step) and **is** included in
-the BLUEPRINT §8 disk totals (lean ≈ 9.7 GB / full ≈ 19.6 GB). Pulling it does not make it a supported configuration; see below.
+fallback). `llama3:8b` is an **optional** pull — [PLAN](PLAN.md) §1 records it as an operator choice so
+that it is one env var away — adding **4.7 GB** (8.0 GB total for this step), included in the BLUEPRINT §8
+totals (lean ≈ 9.7 GB / full ≈ 19.6 GB). **On a disk-constrained host, skip it** (see the pre-provision
+checklist): it does not fit in 8 GB RAM at runtime, so it is never a supported configuration — it exists
+only to reproduce the does-not-fit failure. On the current host the recommended path is to **skip the 8b
+pull** (22.5 GB free < the 25 GB the full closure wants).
 **6–14 min (ESTIMATE), or 12–24 min (ESTIMATE) with the 8b tag.**
 **On failure:** confirm `OLLAMA_MODELS` pointed inside the repo *before* the pull. A model pulled into
 `~/.ollama` is outside the manifest and will make A10 and every later boot verification inconsistent.
