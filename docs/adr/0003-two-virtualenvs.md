@@ -62,7 +62,7 @@ Each has its own hash-pinned lockfile (`requirements.runtime.lock`, `requirement
 - Contributors will reach for `transformers` out of habit. `CLAUDE.md` invariant 10 — never install torch/transformers/huggingface-hub into the runtime venv — exists specifically to catch that: *"if you think you need one, you need `tokenizers` or `onnxruntime` instead — say so rather than adding it."*
 
 ### Neutral
-- `pytest` lives in `.venv-provision` for provisioning gates; the runtime test set installs `[dev]` into `.venv` separately.
+- `pytest` lives in `.venv-provision` for provisioning gates; the runtime test set installs `[dev]` into `.venv` separately. The `[dev]` extra is enumerated with pins in BLUEPRINT §2.2 (pytest, hypothesis, pytest-asyncio, ruff, mypy — the last two being what `make lint`/`make typecheck` invoke); it is a test/lint dependency set and is never present on the sealed runtime path.
 - After `make seal`, `.venv-provision` may be deleted outright. Nothing in OPERATE reads it.
 
 ## Verification

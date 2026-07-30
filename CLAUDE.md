@@ -42,7 +42,7 @@ The checkpoint ships `{"0": "SAFE", "1": "INJECTION"}` — but a hardcoded index
 
 **6. Never let an `except` silently disable a guardrail. Every failure path is fail-CLOSED.**
 An error, a timeout, or a partial result from any guardrail **blocks**: 400 for a rejection, 503 for unavailability, 413 for oversize. There is exactly one fail mode and it is closed. Do not add `*_FAIL_MODE=open`, `*_DISABLED`, or any env var that weakens a control; dev bypasses live in a separate app factory that `sagp.app.main` cannot import.
-*Check:* `tests/integration/test_blocked_flow.py`; the fail-closed matrix in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §10 must have a row per component. Note **OQ-6**: it is not yet established whether Presidio's regex timeout propagates out of `analyze()` or is swallowed into a partial result set — read `PatternRecognizer.__analyze_patterns` at tag `2.2.364` before M4 and wrap accordingly.
+*Check:* `tests/integration/test_blocked_flow.py`; the fail-closed matrix in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §10 must have a row per component. Note **OQ-6** (RESOLVED-CONFIRMED against `presidio-analyzer==2.2.364` source): `PatternRecognizer.__analyze_patterns` **catches `TimeoutError` per pattern, logs "skipping", and returns a partial result set** — a crafted catastrophic-backtracking input silently disables individual recognizers while `analyze()` returns normally. This is a silent fail-open in the masking layer; M4 must treat a per-pattern regex timeout as a guardrail failure (→ 503), not swallow it.
 
 **7. Never mask before scanning. Injection detection runs on normalized text BEFORE PII masking.**
 Reverse the order and an attacker plants the payload inside a span Presidio masks; the classifier then scans `<PERSON_1>` instead of the attack. The canonical order is C3 normalize → C4–C7 injection → C8 neutralize placeholders → C9–C12 PII, per BLUEPRINT §5.7.
@@ -188,7 +188,7 @@ Re-provisioning is: `make unseal REASON="add pypdf 6.15.0"` → reconnect → `m
 | How the final prompt string is assembled | `src/sagp/rag/prompt.py` — the sole builder; nonce delimiters, retrieved text in the **user** role |
 | A pinned model ID, revision, or expected byte size | `artifacts.lock` **and** `MANIFEST.json` **and** an ADR under `docs/adr/`, in one commit |
 | A pinned package version | `pyproject.toml` → `make lock` → both `requirements.*.lock` → ADR, in one commit |
-| The egress allowlist (hosts, AF_UNIX paths, allowlisted subprocesses) | `src/sagp/netguard/egress.py`; `/var/run/docker.sock` is denied unconditionally in OPERATE |
+| The egress allowlist (hosts, AF_UNIX paths, allowlisted subprocesses) | `src/sagp/netguard/egress.py`; `/var/run/docker.sock` is denied unconditionally in OPERATE. Subprocess entries match on **(resolved absolute binary path AND exact argv tuple)** — never path alone, since an allowlisted binary can egress via its own arguments (e.g. `ollama pull`); the sole default entry is `[<resolved ollama path>, "--version"]` |
 | Runtime env exported before the interpreter starts | `scripts/seal.sh`, which generates `.env.sealed` — never hand-edit `.env.sealed` |
 | Caps and timeouts (`SAGP_MAX_*`, `timeout_*_ms`) | `src/sagp/config.py` defaults + `.env`; canonical set in BLUEPRINT §12 |
 | Which spaCy pipeline loads | `SAGP_SPACY_MODEL` (`en_core_web_md` default; `lg` costs +0.60 GB (ESTIMATE) and forces `llama3.2:1b`) |
@@ -202,7 +202,7 @@ Re-provisioning is: `make unseal REASON="add pypdf 6.15.0"` → reconnect → `m
 - **pydantic v2** (`==2.13.4`, floor set by Presidio). Settings are `Settings(BaseSettings, env_prefix="SAGP_")`. Upstream keys (`HF_*`, `OLLAMA_*`, `TLDEXTRACT_CACHE`) keep their real names and are exported by `bin/sagp-serve` before the interpreter starts, because pydantic-settings loads too late to matter.
 - **`src/sagp/config.py` imports nothing from `sagp.*`.** Same for `types.py` — no library imports at all. They are the base of the dependency graph.
 - **Dependency direction:** `config`/`errors`/`types` → `utils` → `audit` → `guardrails` → `rag`/`llm` → `app`. `netguard` depends only on `config`/`errors`. No edge points backwards; no module in `guardrails/` imports from `app/`.
-- **Errors:** one root `SagpError` in `errors.py`, with `PromptRejected` → 400, `GuardrailUnavailable` → 503, `InputTooLarge` → 413. `EgressViolation` is raised by `netguard` and is deliberately *not* a `SagpError` — it must never be caught by a handler that turns it into a 500.
+- **Errors:** one root `SagpError` in `errors.py`. The full taxonomy and its converting layer (a single exception handler registered in `app/main.py`, never `BaseHTTPMiddleware`): `PromptRejected` → 400 `PROMPT_REJECTED` (the uniform opaque body, padded to the rejection-latency floor — covers every detector reject, C3–C12, including BLOCK-list and vault-cap); `UnsupportedRequest` → 400 `UNSUPPORTED` (multi-turn / schema, non-detector, no timing floor); `AuthError` → 401; `RateLimited` → 429; `InputTooLarge` → 413; `GuardrailUnavailable` → 503 (any guardrail error, timeout, or — per OQ-6 — a swallowed regex timeout). `EgressViolation` is raised by `netguard` and is deliberately *not* a `SagpError` — it must never be caught by a handler that turns it into a 500. See BLUEPRINT §5.7 for which stage raises which.
 - **Singletons are lazy.** Engines are created by `@lru_cache`-decorated factories in `src/sagp/app/deps.py` and nowhere else. **Never construct a model, an ORT session, a spaCy pipeline, or a Presidio engine at import time** — `import sagp` must be free of side effects and must not touch the filesystem or the network. The Presidio analyzer in particular is not process-safe to share.
 - **Guardrails are FastAPI dependencies, never `BaseHTTPMiddleware`.** Starlette's `ExceptionMiddleware` sits inside user middleware and would degrade a typed 400 into an opaque 500.
 - **Presidio imports come from the package**, `from presidio_analyzer.predefined_recognizers import …`, never a module path — recognizers were reorganised into subpackages at 2.2.364 but all names remain exported at the package level.
@@ -225,7 +225,7 @@ No test exists yet and none has been run (§10); everything here is the specifie
 **Metric floors** — build-gate **targets**, not measurements. Nothing below has been measured; `docs/metrics/latest.json` does not exist and is first produced by `make eval` at M6:
 
 ```
-INJECTION_RECALL ≥0.90 (per technique family) · INJECTION_PRECISION ≥0.85
+INJECTION_RECALL ≥0.90 over families A,C,D,E,G,H,I (per-family recall reported; B and F reported separately, never averaged into the headline) · INJECTION_PRECISION ≥0.85
 BENIGN_FPR ≤0.10 over benign.jsonl, ≥30% hard negatives
 PII recall: EMAIL_ADDRESS ≥0.98 · CREDIT_CARD ≥0.98 · IN_AADHAAR ≥0.95 · PERSON ≥0.80
 REGRESSION: once a baseline exists, any metric >2pp below it fails the build.

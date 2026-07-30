@@ -20,9 +20,16 @@ None is ever printed to a terminal or written to an audit record.
 |---|---|---|---|---|
 | `SAGP_API_TOKEN` | `09_secrets.py`, CSPRNG | `.env` | `0600` | Every client holding the old token gets **401** on `chat` and `ingest`. No data impact; no restart of Ollama or Qdrant needed. Restart the app so `Settings` re-reads it. |
 | `SAGP_API_TOKEN_REVEAL` | `09_secrets.py`, CSPRNG | `.env` | `0600` | Same, for the `pii:reveal` scope only. Callers lose rehydration (C23) and fall back to receiving `<PERSON_1>`-style placeholders — a **degradation, not an error**, which makes it easy to miss. |
-| Audit HMAC key | `09_secrets.py`, CSPRNG | `.env` | `0600` | Chain verification (`chain_digest`, sha256 over record bytes) **still passes** across the boundary. Any HMAC'd token derived from this key stops matching its pre-rotation counterpart, so cross-record correlation breaks at the rotation point. Append a `key_rotation` record so an auditor can see *why* correlation stops rather than inferring tampering. |
-| PII pepper | `09_secrets.py`, CSPRNG | `.env` | `0600` | `pii_token_hmacs` — `HMAC(key, f"entity:{type}\x1f{normalize(type,value)}")` — change for the same entity. You permanently lose the ability to answer "did this same email appear before the rotation?" That is the entire purpose of the field. Rotate only for cause. |
+| `SAGP_AUDIT_HMAC_KEY` (audit HMAC key) | `09_secrets.py`, CSPRNG | `.env` | `0600` | Chain verification (`chain_digest`, sha256 over record bytes) **still passes** across the boundary. Any HMAC'd token derived from this key stops matching its pre-rotation counterpart, so cross-record correlation breaks at the rotation point. Append a `key_rotation` record so an auditor can see *why* correlation stops rather than inferring tampering. |
+| `SAGP_PII_PEPPER` (PII pepper) | `09_secrets.py`, CSPRNG | `.env` | `0600` | `pii_token_hmacs` — `HMAC(key, f"entity:{type}\x1f{normalize(type,value)}")` — change for the same entity. You permanently lose the ability to answer "did this same email appear before the rotation?" That is the entire purpose of the field. Rotate only for cause. |
 | Ed25519 manifest keypair | `09_secrets.py` | private: `.airgap/keys/manifest_ed25519`<br>public: `.airgap/keys/manifest_ed25519.pub` (**committed**) | `0600` / `0644` | Every previously issued `MANIFEST.json.sig` and every signed `EVIDENCE-*.json` becomes unverifiable under the new key. You must re-sign the manifest (re-run step A10) and commit the new public key. **Archive the old public key with the old evidence** or the historical proofs become unreadable. |
+
+**Delivery at runtime.** `09_secrets.py` writes these into `.env` (`0600`). `bin/sagp-serve` sources
+**`.env` (secrets) and then `.env.sealed` (the offline/telemetry/Ollama flags)** before it execs the
+interpreter — both files are present and read in OPERATE. The `.env.sealed` listing published in
+BLUEPRINT §6 and RUNBOOK B2 deliberately **elides the secret exports**; they are real, they are just
+not printed in the docs. `.env.sealed` is generated and must never be hand-edited; `.env` holds only
+the five secrets above.
 
 **Rules that apply to all five.**
 
@@ -35,10 +42,12 @@ None is ever printed to a terminal or written to an audit record.
   Adequate for a single-tenant sealed box, inadequate for anything else. Treat `SAGP_API_TOKEN_REVEAL` as
   the most sensitive of the five.
 
-**OPEN QUESTION.** The BLUEPRINT specifies `audit/hashing.py` as exposing `hmac_token` (domain-separated),
-`sha256_hex`, and `chain_digest`, and separately lists both an audit HMAC key and a PII pepper. It does not
-state which of the two keys `pii_token_hmacs` is derived from. Resolve this at M2, before the audit spine
-is written, and correct the two middle rows of the table above to match.
+**OQ-12 (M2-blocking).** The BLUEPRINT specifies `audit/hashing.py` as exposing `hmac_token`
+(domain-separated), `sha256_hex`, and `chain_digest`, and separately lists both `SAGP_AUDIT_HMAC_KEY`
+and `SAGP_PII_PEPPER`. It does not state which of the two keys `pii_token_hmacs` is derived from
+(the pepper, almost certainly — but pin it, don't assume). Resolve at M2, before the audit spine is
+written, and correct the two middle rows of the table above to match. Tracked as **OQ-12** in
+BLUEPRINT §14.
 
 ---
 

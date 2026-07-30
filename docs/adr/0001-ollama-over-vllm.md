@@ -15,10 +15,10 @@ Forces:
 
 | Force | Value | Source |
 |---|---|---|
-| RAM ceiling | 8 GB unified, shared with a macOS baseline of 3.00 GB (ESTIMATE — not measured on this host) | BLUEPRINT §7 |
+| RAM ceiling | 8 GB unified, shared with a macOS baseline of 3.00 GB (measured — the only measured row in BLUEPRINT §7; every other RAM figure is an estimate) | BLUEPRINT §7 |
 | Budget left for the LLM after the app process (1.16 GB, ESTIMATE) | ~2.6 GB steady state, embedded-Qdrant profile (PROJECTION) | BLUEPRINT §7 |
 | Python pin | **3.11.15**, chosen as the intersection of the `spacy==3.8.13` / `presidio-analyzer==2.2.364` wheel matrix — an intersection pin taken for safety, not a forced one (BLUEPRINT §1.1) | BLUEPRINT §2.1 |
-| Quantization required | 4-bit (`q4_K_M`) — a 3B model at fp16 alone is ~6.4 GB | BLUEPRINT §2.5 |
+| Quantization required | 4-bit (`q4_K_M`) — a 3B model at fp16 alone is ~6.4 GB (this ADR's own arithmetic: 3.2B params × 2 bytes) | — |
 | Accelerator | Apple Metal via the unified memory pool; no CUDA device exists | host hardware facts |
 | Network posture | The runtime must never resolve a hostname; the model must already be on disk | BLUEPRINT §6 Phase 2 |
 
@@ -36,7 +36,7 @@ Specifics: `llama3.2:3b-instruct-q4_K_M` (2.0 GB) is the default; `OLLAMA_CONTEX
 |---|---|
 | **vLLM on Metal** | There is no practical Metal / macOS-arm64 backend. vLLM's supported accelerators are CUDA, ROCm, TPU and CPU; the macOS path is a source build of the CPU backend. A CPU-only 3B decode on an M2 forfeits the GPU that the unified memory pool exists to feed. |
 | **vLLM on CPU** | The CPU backend does not offer 4-bit weight quantization. Without `q4_K_M` the 3B model does not fit under the ~2.6 GB the RAM table leaves for the LLM. |
-| **vLLM under the pinned interpreter** | vLLM's macOS/CPU build instructions target a newer Python than the **3.11.15** this project pins for the spaCy/Presidio wheel matrix. Adopting vLLM means either a second interpreter for the serving process or moving off that pin. (UNVERIFIED — no vLLM build was attempted on this host; recorded from the source design note in BLUEPRINT §4.) |
+| **vLLM under the pinned interpreter** | vLLM's macOS/CPU build instructions target a newer Python than the **3.11.15** this project pins for the spaCy/Presidio wheel matrix. Adopting vLLM means either a second interpreter for the serving process or moving off that pin. (UNVERIFIED — no vLLM build was attempted on this host; this is a design-time assessment, not a measured result.) |
 | **vLLM's memory model** | vLLM preallocates a PagedAttention KV pool sized as a fraction of device memory at engine start. On a unified-memory host that pool is taken from the same 8 GB the guardrail models live in, and it is claimed whether or not a request is in flight. The RAM budget projects 1.25 GB of headroom in the embedded-Qdrant profile (and none to speak of in `PROFILE=demo`); a preallocated pool consumes it unconditionally. |
 | **llama.cpp / `llama-server` directly** | Technically viable and the same GGUF weights. Rejected on provisioning ergonomics: Ollama gives one command (`ollama pull`) that produces content-addressed blobs whose digests go straight into `MANIFEST.json`, plus a stable HTTP contract and a maintained Python client. The gain from dropping the Ollama layer is small; the loss in runbook simplicity is not. |
 | **Any hosted API** | Terminates the project. `CLAUDE.md` invariant 2 — never add a network call — permits exactly two egress targets, both loopback. |

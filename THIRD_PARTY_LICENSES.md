@@ -74,7 +74,7 @@ Direct and explicitly-pinned dependencies from [BLUEPRINT.md §2.1](docs/BLUEPRI
 | ollama (Python client) | 0.6.2 | `MIT` | dist-info licence file |
 | pypdf | 6.14.2 | `BSD-3-Clause` | dist-info licence file — **see §5, the PyMuPDF rejection** |
 | pyyaml | >=6.0.3,<7 | `MIT` | dist-info licence file |
-| regex | >=2024.11 | `Apache-2.0` | dist-info licence file. **Re-verify:** this package's licence changed in its history; older releases carried a CNRI/PSF-derived licence. Confirm against the resolved version's metadata. |
+| regex | >=2024.11 | `Apache-2.0 AND CNRI-Python` | Current releases declare License-Expression `Apache-2.0 AND CNRI-Python` (the CNRI-derived component was always present in the licence file; releases before ~2025 declared only "Apache Software License" in metadata). **Confirm against the resolved version's metadata and pin it.** |
 | phonenumbers | 9.0.35 | `Apache-2.0` | dist-info licence file (Python port of libphonenumber) |
 | tldextract | 5.3.1 | `BSD-3-Clause` | dist-info licence file. Note the bundled Public Suffix List snapshot, §1.1 below. |
 | cryptography | >=48.0.1,<49 | `Apache-2.0 OR BSD-3-Clause` | dist-info; the distribution ships both texts. Pulled transitively by presidio-anonymizer. Statically links OpenSSL — see §1.1. |
@@ -169,7 +169,7 @@ which runs Qdrant embedded in-process.
 | Image | Version | SPDX identifier | Where the licence text lives |
 |---|---|---|---|
 | `qdrant/qdrant` | `v1.18.3-unprivileged`, pinned by digest; ~70 MB compressed, ~0.15 GB as a tar | `Apache-2.0` | Qdrant source at `github.com/qdrant/qdrant`; the licence is also present inside the image filesystem. Note this covers the Qdrant server, which is a distinct artefact from the `qdrant-client` Python package in §1 (also `Apache-2.0`). |
-| `alpine` | `3`, pinned by digest; ~8 MB | **Multiple — not a single identifier** | An Alpine base image is a collection of packages under many licences. Two that matter for redistribution: `musl` (`MIT`) and `busybox` (**`GPL-2.0-only`**). If you redistribute the saved image tar, GPL source-availability obligations attach to the busybox component. Enumerate with `docker run --rm alpine:3 sh -c 'apk info -L --license 2>/dev/null || apk info'` and record the result. Used only as the egress prober in `PROFILE=proof`. |
+| `alpine` | `3`, pinned by digest; ~4 MB compressed (~8 MB uncompressed) | **Multiple — not a single identifier** | An Alpine base image is a collection of packages under many licences. Two that matter for redistribution: `musl` (`MIT`) and `busybox` (**`GPL-2.0-only`**). If you redistribute the saved image tar, GPL source-availability obligations attach to the busybox component. Enumerate with `docker run --rm alpine:3 sh -c 'apk info -L --license 2>/dev/null || apk info'` and record the result. Used only as the egress prober in `PROFILE=proof`. |
 
 ---
 

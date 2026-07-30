@@ -342,7 +342,7 @@ curl -s -X POST http://127.0.0.1:8000/v1/chat \
 | `C0` | Token resolves to a `Principal` with scopes `{chat, ingest}`. Rate-limit bucket decremented. |
 | `C1`–`C2` | Single-turn schema OK; 62 chars, well under 8000. |
 | `C3` | `normalize()` applies NFKC, homoglyph folding and whitespace collapse. No tag chars, no bidi overrides — no outright block here. |
-| `C4` | Heuristics are expected to fire `OVERRIDE_PHRASE`, `DISREGARD` and `SYSTEM_PROMPT_PROBE`. Whether the weighted sum clears 0.85 on this exact string is unmeasured; the weights are unvalidated priors (GUARDRAILS §8.1). |
+| `C4` | Heuristics are expected to fire `OVERRIDE_PHRASE`, `DISREGARD` and `SYSTEM_PROMPT_PROBE`. Whether the highest-weighted firing rule (`max` over rules, never a sum — GUARDRAILS §3.5) clears 0.85 on this exact string is unmeasured; the weights are unvalidated priors (GUARDRAILS §8.1). |
 | `C5` | No base64/hex/rot13 layers to peel. |
 | `C6` | Classifier runs over `{raw, normalized}`. One window; `score = max`. Its score on this payload is **unmeasured** — the model is archived and English-only. |
 | `C7` | If `max(classifier, heuristic_weight) >= 0.85`, the request raises **`PromptRejected`**. This payload is the canonical case the 0.85 threshold was chosen for, so it is *expected* to reject — but that expectation has not been tested. |
@@ -612,7 +612,7 @@ about the daemon's own traffic.
 | `make seal-pf` (optional, `sudo`) — loads `deploy/pf/com.sagp` | Packet-filter enforcement for UID-owned TCP/UDP, which does cover the Ollama process | It is **optional**. If the operator skips it, Ollama is entirely unconstrained. It does not cover Docker. |
 | `.env.sealed`: `OLLAMA_HOST=127.0.0.1:11434`, `OLLAMA_ORIGINS=http://127.0.0.1`, `OLLAMA_NO_CLOUD=1`, `OLLAMA_NOPRUNE=1`, `OLLAMA_MODELS="$PWD/models/ollama"` | Loopback binding and no cloud endpoints, by configuration | Configuration, not enforcement. A different launch path ignores it. |
 | The Ollama **binary's sha256 is recorded in `MANIFEST.json`** and verified in `full` mode at boot | Detects substitution of the binary between seals | Detects, does not prevent; and says nothing about whether the upstream binary is honest |
-| `ollama --version` is asserted at startup (client `0.30.10`), and it is the allowlisted positive control in offline assertion #6 | Confirms the expected runtime is the one being invoked | A version string is not an integrity check |
+| `ollama --version` is asserted at startup (client `0.30.10`), and it is the allowlisted positive control in offline assertion #6 | Confirms the expected runtime is the one being invoked | A version string is not an integrity check. The subprocess allowlist matches on **(resolved path AND exact argv tuple)** — `[<ollama path>, "--version"]` only — because a path-only allowlist would sanction any invocation of the binary, including `ollama pull`, which drives registry egress. Even so, any allowlisted native binary can egress via its own runtime and arguments; no Python guard layer covers that, only `pf` does. |
 | Buffered generation only (`stream=False`), timeout 120 s, `keep_alive="30m"`, `num_predict=512` | Bounds what the LLM call can consume, and keeps the output guardrail decidable | Nothing about egress |
 
 **The plain statement for the evidence report.** The Python egress guard can honestly claim

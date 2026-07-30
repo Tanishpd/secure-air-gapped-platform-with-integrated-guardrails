@@ -28,7 +28,7 @@
 | 9 | Embedding model | **`BAAI/bge-small-en-v1.5` @ `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`**, ONNX, **CLS pooling → L2 normalize**, query prefix on queries only. | Verified `onnx/model.onnx` = **133,093,490 B**, ungated. MiniLM deleted from all lockfiles. |
 | 10 | LLM | **`llama3.2:3b-instruct-q4_K_M`** (2.0 GB). `llama3:8b` is **pulled during provisioning** (project owner's decision, 4.7 GB on disk — §8) but documented as **does not fit in 8 GB at runtime** (projected 9.28 GB, §7) — it earns a loud startup warning, not an "accuracy profile". | rag §6 CONFIG B: no 8B variant fits; over by ≥1.3 GB. |
 | 11 | Ingest PII policy | **`ingest_mode=raw`.** Store real chunk text; mask at retrieval with the per-request vault. `ingest_mode=masked` **deleted**. | Persistent vault + per-request vault collide on `<PERSON_1>` across identities; and masked docs vs raw queries destroys retrieval. |
-| 12 | Block status code | **HTTP 400 `PROMPT_REJECTED`, identical body and ≥120 ms timing floor, for every detector including PII BLOCK-list.** 503 for unavailable, 413 for oversize, 401 for auth. | A 403-vs-400 split is a detector oracle. |
+| 12 | Block status code | **HTTP 400 `PROMPT_REJECTED`, identical body and a fixed rejection deadline (120 ms placeholder, calibrated at M13), for every detector including PII BLOCK-list.** 503 for unavailable, 413 for oversize, 401 for auth; C1 `UNSUPPORTED` (schema, pre-detector) is the sole exemption. | A 403-vs-400 split is a detector oracle. |
 | 13 | `X-PII-Masked-Count` / `GuardrailReport` in the response body | **Removed from client responses.** Counts and scores go to the audit record and the authenticated `/v1/admin/incident/{id}` route only. | Threshold hill-climbing oracle; `CreditCardRecognizer` is Luhn-binary, so a count leak is a card validator. |
 | 14 | Normalization / offset seam | **Ingress:** normalized text is canonical; Presidio analyzes and anonymizes the normalized string. **Egress:** Presidio analyzes the *raw* response; a second analysis of the normalized response yielding **more** entities → hard block. **No offset map exists anywhere.** | Eliminates the offset-corruption class entirely. Fail-closed on the one case that needs mapping. |
 | 15 | Datamarking (U+2581) | **Deleted.** Nonce delimiters only. | 1.5–3× token blowup on a llama3 BPE, and it makes the retrieval re-scan classify out-of-distribution text. |
@@ -119,6 +119,7 @@ ollama           ==0.6.2
 pypdf            ==6.14.2               # BSD-3; PyMuPDF REJECTED (AGPL-3.0 §13)
 pyyaml           >=6.0.3,<7
 regex            >=2024.11
+psutil           ==7.1.0                # lifespan RAM boot-refusal + /readyz per-component RSS (§7); not transitive
 
 # transitive, pinned explicitly for the hash-locked wheelhouse
 phonenumbers     ==9.0.35
@@ -143,6 +144,17 @@ sentence-transformers==5.6.1            # ONLY to produce the embedding parity f
 pytest           ==9.1.1
 ```
 
+**`[dev]` extra (installed into `.venv`, the runtime venv, for the test/lint loop — never shipped sealed):**
+
+```
+pytest           ==9.1.1                 # same pin as the provision closure
+hypothesis       ==6.140.3               # property tests: audit-no-PII, neutralize⊇rehydrate, vault
+pytest-asyncio   ==1.3.0                 # async route tests
+ruff             ==0.15.3                # `make lint` runs `ruff check` + `ruff format --check`
+mypy             ==1.19.1                # `make typecheck` runs `mypy src/sagp` (part of definition-of-done)
+# httpx (already a runtime dep) provides the ASGI test client — no starlette TestClient extra needed
+```
+
 ### 2.3 HuggingFace models (exact IDs + pinned revisions, verified live)
 
 | Role | Repo ID | Revision (commit SHA) | Files to fetch | Bytes |
@@ -165,16 +177,67 @@ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0
 
 ```
 llama3.2:3b-instruct-q4_K_M    2.0 GB   Q4_K_M   128K native ctx   [DEFAULT]
-llama3.2:1b                    1.3 GB   Q4_K_M                     [INT8-parity-failure fallback]
+llama3.2:1b                    1.3 GB   Q8_0                       [INT8-parity-failure fallback]
 llama3:8b                      4.7 GB   Q4_0     8K ctx            [DOES NOT FIT — see §7]
 ```
+
+The bare `llama3.2:1b` tag resolves to a **Q8_0** build (1.3 GB; digest `baf6a787fdff` at time of
+writing) — *not* Q4_K_M. `artifacts.lock` should pin the digest or the explicit `llama3.2:1b-instruct-q8_0`
+alias rather than the mutable `1b` tag. (The `q4_K_M` variant of 1b is a different 808 MB blob; do not
+substitute it — every RAM/disk figure here assumes the 1.3 GB Q8_0 build.)
 
 ### 2.6 Docker images (`PROFILE=demo` and `PROFILE=proof` only)
 
 ```
 qdrant/qdrant:v1.18.3-unprivileged   ~70 MB compressed  → pin by digest at provision, `docker save`
-alpine:3                             ~8 MB              → pin by digest; egress prober only
+alpine:3                             ~4 MB compressed (~8 MB uncompressed)  → pin by digest; egress prober only
 ```
+
+### 2.7 `artifacts.lock` and `MANIFEST.json` — worked schemas
+
+`artifacts.lock` (TOML, committed, human-edited) is the *intent*: one stanza per artifact class,
+pinned by revision/digest + expected size. `MANIFEST.json` (generated by `10_manifest.py`, committed)
+is the *evidence*: per-file sha256 over what actually landed, plus an upstream cross-check and an
+Ed25519 signature. `make verify` (mode `full`) recomputes every hash against `MANIFEST.json`.
+
+```toml
+# artifacts.lock  — one stanza per artifact
+[[hf_model]]
+id       = "protectai/deberta-v3-base-prompt-injection-v2"
+revision = "90c9989b1a342275dd0d1a95aad283c04e075671"   # immutable commit SHA, never a branch
+files    = ["config.json", "onnx/model.onnx", "onnx/tokenizer.json", "..."]
+bytes    = { "onnx/model.onnx" = 738563188 }
+
+[[ollama_model]]
+tag    = "llama3.2:3b-instruct-q4_K_M"
+digest = "sha256:<pinned>"                               # pin the digest, not the mutable tag
+bytes  = 2019393189
+
+[[docker_image]]
+ref    = "qdrant/qdrant:v1.18.3-unprivileged"
+digest = "sha256:<pinned>"
+```
+
+```jsonc
+// MANIFEST.json  (airgap schema; manifest_hash is an alias of root_hash)
+{
+  "manifest_version": 1,
+  "seal_generation": 3,
+  "generated_ts": "2026-07-30T00:00:00Z",     // local clock — see LIMITATIONS (no offline TSA)
+  "canonicalization": "sha256 over each file's raw bytes; root_hash = sha256 of the sorted
+                        'path\\0hex\\n' lines (LF, sorted by path, UTF-8)",
+  "files": [
+    { "path": "models/hf/injection/onnx/model.onnx",
+      "sha256": "<64-hex>", "size": 738563188,
+      "upstream_sha256": "<64-hex-or-null>",  // HF-published hash where available; algo diff labelled
+      "kind": "hf_model" }
+  ],
+  "root_hash": "<64-hex>",
+  "signature": { "alg": "ed25519", "key_id": "<8-hex fingerprint>", "sig": "<base64>" }
+}
+```
+
+Sidecars: `MANIFEST.json.sha256` (the root hash alone) and `MANIFEST.json.sig` (detached signature).
 
 ---
 
@@ -208,7 +271,7 @@ attention_mask = np.array([w.attention_mask for w in windows], dtype=np.int64)
 
 `Encoding` exposes `.ids`, `.tokens`, `.attention_mask`, `.type_ids`, `.offsets`, `.overflowing` — all confirmed. DeBERTa-v2 has `type_vocab_size: 0`, so drive the ORT feed dict off `sess.get_inputs()` and never hardcode input names.
 
-**Tokenizer parity gate (provisioning, online):** assert `tokenizers.Tokenizer.from_file(...)` produces byte-identical `input_ids` and `attention_mask` to `transformers.AutoTokenizer.from_pretrained(...)` over the full 63-case corpus. Fails the build on any divergence. This is what makes dropping `transformers` safe.
+**Tokenizer parity gate (provisioning, online):** assert `tokenizers.Tokenizer.from_file(...)` produces byte-identical `input_ids` and `attention_mask` to `transformers.AutoTokenizer.from_pretrained(...)` over **every record of `tests/corpus/attacks.jsonl` + `tests/corpus/benign.jsonl`** (the corpus grows, so the gate is defined over the files, not a fixed count). Fails the build on any divergence. This is what makes dropping `transformers` safe. The **embedding parity gate** likewise runs over `tests/fixtures/embedding_parity.jsonl` (200 texts drawn from the sample corpus + hard cases), asserting ORT+CLS+L2 matches `sentence-transformers` to `atol=1e-4`.
 
 ---
 
@@ -371,7 +434,7 @@ Secure Air-Gapped Platform with Integrated Guardrails/
 │   ├── evidence.py                           # Render + sign EVIDENCE-*.json/.md; append to evidence/ledger.jsonl.
 │   ├── eval_guardrails.py                    # Corpus run → docs/metrics/latest.json.
 │   ├── verify_audit.py                       # CLI over audit.verify.verify_chain; exit 1 on break.
-│   ├── gen_sample_pdf.py                     # Generates the SYNTHETIC PII-bearing demo PDF. No real PII, ever.
+│   ├── gen_sample_pdf.py                     # Authors BOTH synthetic PDFs via pypdf PdfWriter + hand-built content streams (no new dep): employee_handbook.pdf (synthetic PII, never real) and poisoned_appendix.pdf (embeds the EVALUATION family-F payloads exercising the three visitor_text detectors — tiny font, off-MediaBox, /RenderMode 3).
 │   ├── ingest.py                             # CLI ingest wrapper.
 │   └── smoke.sh                              # 14 numbered PASS/FAIL checks; --fast uses FakeLLM.
 │
@@ -521,26 +584,26 @@ Guardrails run as **FastAPI dependencies**, never `BaseHTTPMiddleware` (Starlett
 | # | Stage | Fail-closed behaviour |
 |---|---|---|
 | C0 | Bearer → `Principal`; rate-limit bucket by `principal.id` | invalid → **401**; over limit → **429** |
-| C1 | Schema: `{message: str, collection: str}`. A `messages` array len>1 → reject | → **400 `UNSUPPORTED`** |
+| C1 | Schema: `{message: str, collection: str}`. A `messages` array len>1 → reject | → **400 `UNSUPPORTED`** (a schema error raised *before any detector runs*; it is the one 400 exempt from the oracle-uniform `PROMPT_REJECTED` body and the rejection deadline, because it reveals nothing about a detector — see the **Uniform rejection surface** note below) |
 | C2 | `len(message) > SAGP_MAX_INPUT_CHARS (8000)` | → **413 `INPUT_TOO_LARGE`** |
 | C3 | `norm, flags = normalize(message)` | `TAG_CHARS` or `BIDI_OVERRIDE` in flags → **400 `PROMPT_REJECTED`** |
 | C4 | Heuristics over `norm` → weighted score + rule IDs | `DELIMITER_SPOOF` → **400** |
-| C5 | Deobfuscate (`base64/base32/hex/rot13/leet/reverse/spaced`, depth 2, 256 KB cap); decoded payloads join the scan set | decode bomb / cap exceeded → **400** |
+| C5 | Deobfuscate (`base64/base32/hex/rot13/leet/reverse/spaced`, depth 2, 256 KB cap); decoded payloads join the scan set. Each decoded surface is `normalize()`-d and retained for **both** the C6 injection scan **and** the C10 BLOCK-list scan (so an encoded credential cannot slip the BLOCK list) | decode bomb / cap exceeded → **400** |
 | C6 | Injection classifier over `{raw, norm, *decoded}`, windows `max_length=512, stride=128`, cap 16 windows. `score = max`. | `truncated=True` → **400** ("too long to scan" never means allowed). Any exception or >2000 ms → **503 `GUARDRAIL_UNAVAILABLE`** |
 | C7 | Policy: `max(classifier, heuristic_weight) >= 0.85` | → **400 `PROMPT_REJECTED`** |
 | C8 | `neutral, n = neutralize_placeholders(norm)` | `n > 0` → flag + audit (prompts are neutralized, not blocked) |
 | C9 | Presidio `analyze(neutral, INGRESS)`, `default_score_threshold=0.50`, wall-clock cap 3000 ms | exception, timeout, or **any recognizer regex timeout** → **503**. Never a partial result set at 200. |
-| C10 | BLOCK-list check: `CREDIT_CARD, IN_AADHAAR, US_SSN, IBAN_CODE, US_BANK_NUMBER, CRYPTO, MEDICAL_LICENSE, API_KEY, PRIVATE_KEY` | any hit → **400 `PROMPT_REJECTED`** — identical status, body and timing to C7 |
+| C10 | BLOCK-list check over `{neutral, *decoded-normalized}`: `CREDIT_CARD, IN_AADHAAR, US_SSN, IBAN_CODE, US_BANK_NUMBER, CRYPTO, MEDICAL_LICENSE, API_KEY, PRIVATE_KEY`. Scanning the decode set (one extra `analyze()` per decoded surface, bounded by the C5 256 KB cap) closes the base64/hex-encoded-credential bypass | any hit → **400 `PROMPT_REJECTED`** — identical status, body and timing to C7 |
 | C11 | `resolve_person_aliases(neutral, results, vault, origin="prompt")` — longest-first, strict subset, exactly-one-superset, **same origin only** | ambiguous → mint a fresh placeholder (over-mask, never cross-link) |
 | C12 | `anonymize(neutral, results, {"DEFAULT": OperatorConfig("vault_placeholder", {"vault": vault})})` → `masked_prompt`. Vault size cap `SAGP_MAX_VAULT_ENTRIES=2000` | cap exceeded → **400** (a vault-exhaustion input is an attack) |
-| C13 | Embed **`neutral`** (unmasked, normalized, `is_query=True`) | — |
-| C14 | `query_points(collection, query=vec, limit=6, score_threshold=0.35, query_filter=must_not guard.verdict=="quarantined", with_payload=True)` | store exception → **503** |
+| C13 | Embed **`neutral`** (unmasked, normalized, `is_query=True`) | embed exception or > `timeout_embed_ms=2000` → **503** |
+| C14 | `query_points(collection, query=vec, limit=6, score_threshold=0.35, query_filter=must_not guard.verdict=="quarantined", with_payload=True)` | store exception or > `timeout_retrieve_ms=3000` → **503** |
 | C15 | If no hit ≥ `STRONG=0.50` → return `refusal.txt`, **no LLM call**, 200 with `decision="refuse_insufficient_context"` | deterministic, auditor-testable |
 | C16 | Per chunk: `normalize()` → `neutralize_placeholders()`; `n > 0` → **drop the chunk** + high-severity alarm (tamper signal) | — |
 | C17 | `BatchAnalyzerEngine.analyze_iterator(chunks, "en", batch_size=6, n_process=1)` with EGRESS profile (0.35); `anonymize` each with the **same vault**, `origin=f"doc:{sha}"`. **BLOCK list NOT applied to chunks.** | exception → **503** |
-| C18 | `prompt.py` assembles: `nonce = secrets.token_hex(8)`; each masked chunk wrapped in `<<<UNTRUSTED_DOCUMENT_{nonce}_S{i}>>> … <<</UNTRUSTED_DOCUMENT_{nonce}_S{i}>>>`. **No datamarking.** Retrieved content goes in the **user** role, never system. | — |
-| C19 | **Single** injection re-scan of the assembled masked context, threshold 0.90, adjacent-window corroboration (4–5 windows, so it is operative here) | hit → drop the highest-scoring chunk, reassemble, rescan (max 2 iterations). All chunks dropped → C15 refusal. Exception → **503** |
-| C20 | Context char budget `SAGP_MAX_CTX_CHARS=7000`; drop lowest-scoring chunks until under | prevents Ollama silently truncating the closing delimiter |
+| C18 | `prompt.py` **budget-selects** masked chunks by retrieval score until under `SAGP_MAX_CTX_CHARS=7000` (the trim happens **here, before the re-scan**, so the scanned string is the delivered string), then assembles: `nonce = secrets.token_hex(8)`; each masked chunk wrapped in `<<<UNTRUSTED_DOCUMENT_{nonce}_S{i}>>> … <<</UNTRUSTED_DOCUMENT_{nonce}_S{i}>>>`. **No datamarking.** Retrieved content goes in the **user** role, never system. | budget leaves 0 chunks → C15 refusal |
+| C19 | **Single** injection re-scan of the assembled masked context, threshold 0.90, adjacent-window corroboration (4–5 windows, so it is operative here) | hit → drop the highest-scoring chunk, **re-apply the C18 budget**, reassemble, rescan (max 2 iterations). All chunks dropped → C15 refusal. Exception → **503** |
+| C20 | Assert the re-scanned assembled context is byte-identical to the user-role payload C21 sends (the `test_final_bytes_were_scanned` invariant, §9.4). Prevents Ollama silently truncating the closing delimiter | any divergence is a bug, not a runtime path |
 | C21 | `ollama.Client("http://127.0.0.1:11434").chat(model, messages, stream=False, keep_alive="30m", options={temperature:0.1, top_p:0.9, num_predict:512, seed:42})`, timeout 120 s. **Never pass `num_ctx` per request** (forces a full model reload). | timeout/exception → **503** |
 | C22a | Output structural: strip markdown images/links; if the nonce delimiter or a system-prompt n-gram appears in the output → **block**, return `refusal.txt` | closes the zero-click exfil channel |
 | C22b | Presidio `analyze(response_raw, EGRESS 0.35)` → `anonymize` with the **same vault** → `masked_response` | exception → **503** |
@@ -551,7 +614,7 @@ Guardrails run as **FastAPI dependencies**, never `BaseHTTPMiddleware` (Starlett
 | C25 | Write `AuditEvent`, fsync, chain link | write or scrub failure → **503**, response NOT returned |
 | C26 | `finally: vault.clear()` | — |
 
-**Uniform rejection surface.** Every 400 returns exactly `{"error":{"code":"PROMPT_REJECTED","message":"Your request was rejected by the security policy.","incident_id":"<uuid4>"}}` and is padded by `constant_time_floor(120ms)`. No score, threshold, rule ID, matched substring, model name, window index, or entity type ever crosses the boundary. All of that is in the audit record, retrievable at `GET /v1/admin/incident/{id}` with the `pii:reveal` scope. There is no `admin` scope: the three scopes are `chat`, `ingest` and `pii:reveal` (§0 row 19), and every `/v1/admin/*` route is gated on `pii:reveal`.
+**Uniform rejection surface.** Every *detector* 400 (C3–C12) returns exactly `{"error":{"code":"PROMPT_REJECTED","message":"Your request was rejected by the security policy.","incident_id":"<uuid4>"}}` and terminates at a **fixed rejection deadline** — a single wall-clock target every detector reject is padded to, not a per-detector floor (the `120 ms` value is a placeholder that `test_oracle_uniformity` calibrates above the slowest measured path at M13; see GUARDRAILS §1). The C1 `UNSUPPORTED` schema error is the sole exemption: it fires before any detector and reveals nothing about one, so it is neither body-uniform nor deadline-padded. No score, threshold, rule ID, matched substring, model name, window index, or entity type ever crosses the boundary. All of that is in the audit record, retrievable at `GET /v1/admin/incident/{id}` with the `pii:reveal` scope. There is no `admin` scope: the three scopes are `chat`, `ingest` and `pii:reveal` (§0 row 19), and every `/v1/admin/*` route is gated on `pii:reveal`.
 
 ### 5.8 Thresholds (config/`entities.yaml` + `guardrails.yaml`)
 
@@ -583,6 +646,7 @@ State machine in `.airgap/state.json`: `BOOTSTRAP → PROVISION → OPERATE`, wi
 - `seal` refuses unless `MANIFEST.json` verifies, its signature checks, and `evidence/verify-online-<gen>.json` exists with `all_probes_blocked == true`
 - `up`/`serve` runs full manifest verification as a hard precondition — a mismatch is a startup failure, not a warning
 - `unseal` requires `make unseal REASON="..."` and writes an `unseal_history` entry
+- **`SAGP_GUARD` is not a phase switch.** The `.pth` bootstrap derives the guard mode **solely from `.airgap/state.json`** (unreadable/missing → `enforce`), never from an env var — a typo must not silently disarm the guard. `SAGP_GUARD=audit` is honoured **only** by the `verify-online` harness while `phase == PROVISION`; in `OPERATE` any value other than `enforce` is an invalidating condition (§9.2) and the app refuses to boot.
 
 ### Phase 0 — BOOTSTRAP (online)
 
@@ -768,13 +832,15 @@ Run **before** sealing. This is the only evidence that distinguishes *blocked* f
 2. Flip to `SAGP_GUARD=enforce`. Re-run the identical probes. Each must raise `EgressViolation`.
 3. Write `evidence/verify-online-<gen>.json` with both timings. `make seal` refuses without it.
 
-Resulting report line: *"At 18:31:07Z this host completed a TCP handshake to 1.1.1.1:443 in 24 ms with the guard auditing; with the guard enforcing, the identical probe raised `EgressViolation` in 0.4 ms."*
+The report line is specified to read (illustrative — the figures are placeholders, this run has not happened): *"At 18:31:07Z this host completed a TCP handshake to 1.1.1.1:443 in 24 ms with the guard auditing; with the guard enforcing, the identical probe raised `EgressViolation` in 0.4 ms."*
 
 ### 9.2 `make verify` — the 9 offline assertions (`scripts/verify_airgap.py`)
 
 Each is specified to assert on the **`EgressViolation` type**, never on a generic connection failure. Neither the script nor the target exists yet; nothing in this table has been run.
 
-| # | Assertion | Paired negative control |
+The right-hand column holds **positive controls** — a companion probe proving the assertion *can* pass when it should (so a green result is not the network merely being absent). The term "negative control" is reserved for the §9.1 verify-online audit-vs-enforce pair; assertion 8's companion is the one row that instead demonstrates the guard *firing* (a stock extractor DOES violate).
+
+| # | Assertion | Paired positive control |
 |---|---|---|
 | 1 | Guard installed; both layers report in the install receipt | — (if false, everything below is `INVALID`) |
 | 2 | `socket.create_connection(("1.1.1.1",443))` → `EgressViolation` (L1) | loopback echo server connects and echoes |
@@ -782,8 +848,8 @@ Each is specified to assert on the **`EgressViolation` type**, never on a generi
 | 4 | `socket.getaddrinfo("huggingface.co",443)` → `EgressViolation` | `getaddrinfo("localhost",8000)` succeeds |
 | 5 | `httpx.get("https://huggingface.co")` → `EgressViolation` | `httpx.get("http://127.0.0.1:8000/healthz")` → 200 |
 | 6 | `subprocess.Popen(["curl","https://example.com"])` → `EgressViolation` (PEP 578 `subprocess.Popen` event) | `subprocess.Popen([ollama_path,"--version"])` succeeds (allowlisted) |
-| 7 | `open("/var/run/docker.sock")` connect → `EgressViolation` (AF_UNIX deny-by-default) | an allowlisted unix path connects |
-| 8 | Presidio detects `EMAIL_ADDRESS` with `len(egress.violations()) == 0` | the same call attempted with the un-warmed PSL cache **does** violate |
+| 7 | `open("/var/run/docker.sock")` connect → `EgressViolation` (AF_UNIX deny-by-default) | the probe creates a throwaway unix socket in a temp dir, **transiently** allowlists its path for the duration of this check only, connects, then removes it and re-asserts the allowlist is empty. The operational default allowlist is empty; a non-empty allowlist at verify time (other than the probe's own entry) is itself invalidating |
+| 8 | `SealedEmailRecognizer` detects `EMAIL_ADDRESS` with `len(egress.violations()) == 0` | a **stock** `EmailRecognizer` (default `suffix_list_urls`, cold cache) DOES raise `EgressViolation` — proving by contrast that the sealed constructor (`suffix_list_urls=()` + bundled snapshot), not cache-warming, is what prevents the fetch |
 | 9 | `manifest.verify(mode="full")` → `ok`, `root_hash` matches, signature valid, zero unmanifested files under `models/` | flipping one interior byte of `model.onnx` is detected at the right path |
 
 `PROFILE=proof` adds: `docker network inspect sagp_proof_internal → .Internal == true`; prober cannot reach `1.1.1.1:443`; prober cannot resolve `example.com` via `127.0.0.11` (**paired with**: prober *can* resolve a sibling service name — otherwise the DNS test passes for the wrong reason); Docker daemon version ≥ 26.0.0 (CVE-2024-29018 regression test); **and a second prober attached to `sagp_vec_noegress`**, the network Qdrant actually runs on, running the identical probes. Only that second prober's result may be cited for the production path.
@@ -815,13 +881,16 @@ SMOKE PASS — request ids: …  manifest: …  ledger head: …
 
 ```python
 def test_final_bytes_were_scanned(spy_scanner, spy_ollama, client):
-    """The string sent to Ollama AND the string returned to the caller must each
+    """The untrusted payload sent to Ollama AND the string returned to the caller must each
     have been an argument to a scan() call within the same request."""
     r = client.post("/v1/chat", json={"message": "...", "collection": "handbook"})
-    assert spy_ollama.last_prompt in spy_scanner.scanned_strings
-    assert r.json()["answer"]   in spy_scanner.scanned_strings
+    # Scope to the user-role message (masked question + assembled retrieved context) — the
+    # attacker-influenced bytes. The static system prompt is deliberately never scanned
+    # (documented false-positive source), so it is excluded here by construction.
+    assert spy_ollama.last_user_payload in spy_scanner.scanned_strings
+    assert r.json()["answer"]           in spy_scanner.scanned_strings
 ```
-Every other "the guardrail ran" test is specified to assert on an intermediate value. This one is specified to assert on the bytes that actually cross the boundary. It is not written yet and has never run.
+The first assertion is satisfiable because C18 applies the char-budget trim **before** the C19 re-scan (see §5.7), so the re-scanned assembled context is byte-identical to the user-role payload delivered at C21. It asserts on the user-role bytes that actually cross the boundary — not the never-scanned system prompt, and not an intermediate value. Every other "the guardrail ran" test asserts on an intermediate value. It is not written yet and has never run.
 
 ### 9.5 Metrics gates (`make eval`, committed to `docs/metrics/latest.json`)
 
@@ -852,7 +921,7 @@ Category B (jailbreak — the classifier's documented blind spot) and category F
 | **M9** | Retrieval + prompt | `retriever.py`, `prompt.py` | `test_retriever.py` known-answer ranking; `test_score_normalisation.py`; `test_prompt.py` (nonce cannot be forged; prompt hash stable) | no |
 | **M10** | **FIRST DEMOABLE SLICE** — FastAPI gateway | `app/{main,deps,schemas,middleware,ratelimit}.py`, `routes/{health,chat,ingest,admin}.py`, `output.py`, `registry.py` | `test_chat_endpoint.py`, `test_blocked_flow.py`, `test_guardrail_bypass.py` (AST + runtime spy), `test_oracle_uniformity.py` (all detectors → identical 400 + timing), `test_final_bytes_were_scanned` | no (FakeLLM) |
 | **M11** | Net-guard + manifest at boot | `netguard/{egress,manifest,phase}.py`, `.pth` bootstrap, lifespan full-verify | `test_no_egress.py`, `test_af_unix_denied.py`, `test_subprocess_denied.py`, `test_no_network_imports.py` (AST), `test_manifest.py` | no |
-| **M12** | Indirect-injection layer | ingest-time `guard.*` payload, `docs_quarantine` collection, assembled-context re-scan, admin review route | `test_context_guard.py` with `poisoned_appendix.pdf`; corpus items 33–45 must be caught | no |
+| **M12** | Indirect-injection layer | ingest-time `guard.*` payload, `docs_quarantine` collection, assembled-context re-scan, admin review route | `test_context_guard.py` with `poisoned_appendix.pdf`; every `attacks.jsonl` record with `category == "F_indirect_document"` (surface: document) must be caught | no |
 | **M13** | **THE DEMONSTRATION** | `verify_airgap.py`, `verify_online.py`, `evidence.py`, `probes.py`, `smoke.sh`, ledger | **Disconnect the machine**, then `make verify && make smoke && make test-e2e` all green | **offline — this is the deliverable** |
 | **M14** | Hardening | pf anchor, Docker `demo`/`proof` profiles, Ed25519 signing, log rotation, retention sweep, backup/restore | `make test-all`; a 30-minute soak inside the RAM budget | no |
 | **M15** | Documentation | Everything in `docs/`, README, `CLAUDE.md` final, 9 ADRs, `NOTICE`, `THIRD_PARTY_LICENSES.md` | A reviewer follows README from a clean checkout and reaches a green `make smoke` | no |
@@ -909,7 +978,7 @@ re-cut it to:
 1. Goals / non-goals · 2. Context diagram · 3. Components (gateway, guardrail pipeline, RAG, LLM runtime, vector store, audit, net-guard) — **including the explicit statement that FastAPI runs on the macOS host, not in a container, so the only host↔Qdrant path is the published loopback port and `host.docker.internal` is not the mechanism** · 4. **The request path, numbered C0–C26 exactly as §5.7, with the function called at each step** · 5. Ingest path I1–I11 · 6. Data model: `TextArtifact`, `Chunk`, point payload schema, `ScanResult`, `AuditEvent` · 7. Module boundaries + the enforced dependency rules · 8. Configuration model (`SAGP_` prefix, precedence, `guardrails.yaml` schema) · 9. Concurrency & memory (one worker, `CapacityLimiter(2)`, ORT `intra_op_num_threads=4`, lazy `@lru_cache` singletons, the §7 table) · 10. Fail-closed matrix (component down → behaviour → HTTP code → audit decision) · 11. Performance envelope — **composed p50/p95 per stage, ESTIMATES until M13; every estimate replaced by a measurement after M13** · 12. Extension points · 13. ADR index.
 
 ### `docs/THREAT_MODEL.md`
-1. Scope · 2. Assets (prompts, documents, embeddings, vault, weights, audit log, host) · 3. Trust boundaries (air gap; process; document; operator) · 4. Actors (curious user, malicious user, **malicious document author** — the primary threat, compromised supply chain, insider operator, host-level attacker) · 5. Assumptions and explicit non-goals · 6. **OWASP Top 10 for LLM Applications 2025 mapping** (LLM01 partial-strong / LLM02 strong / LLM03 partial / LLM04 partial / LLM05 strong / LLM06 strong-by-omission / LLM07 partial / LLM08 partial / LLM09 weak / LLM10 partial) · 7. Residual risk register (§13 verbatim) · 8. Compliance mapping pointer · 9. Four attack narratives walked end to end, one of which is the poisoned-PDF→placeholder-exfiltration chain · 10. Detection & response: what appears in the audit log for each · 11. **A named section: "The LLM runtime lives outside the in-process guard"** — Ollama is a separate Go process, covered only by the optional pf layer; its binary sha256 is in `MANIFEST.json` and `ollama --version` is asserted at startup.
+1. Scope · 2. Assets (prompts, documents, embeddings, vault, weights, audit log, host) · 3. Trust boundaries (air gap; process; document; operator) · 4. Actors (curious user, malicious user, **malicious document author** — the primary threat, compromised supply chain, insider operator, host-level attacker) · 5. Assumptions and explicit non-goals · 6. **OWASP Top 10 for LLM Applications 2025 mapping** (LLM01 partial-strong / LLM02 partial — strong design, zero measured efficacy / LLM03 partial / LLM04 partial / LLM05 strong / LLM06 strong-by-omission / LLM07 partial / LLM08 partial / LLM09 weak / LLM10 partial) · 7. Residual risk register (§13 verbatim) · 8. Compliance mapping pointer · 9. Four attack narratives walked end to end, one of which is the poisoned-PDF→placeholder-exfiltration chain · 10. Detection & response: what appears in the audit log for each · 11. **A named section: "The LLM runtime lives outside the in-process guard"** — Ollama is a separate Go process, covered only by the optional pf layer; its binary sha256 is in `MANIFEST.json` and `ollama --version` is asserted at startup.
 
 ### `docs/GUARDRAILS.md`
 1. Philosophy: defence in depth, fail closed, measure everything · 2. Stage table (order, surface, fail mode, estimated p50 — unmeasured until M13) · 3. G1 normalisation & heuristics · 4. G2 injection classifier (model ID + revision + label resolution, windowing, thresholds and their derivation, **the metric contract — floors now, measured P/R/F1 and per-technique recall from M6**, known evasions, and the vendor's own statement that it does not detect jailbreaks) · 5. G3 PII detection & pseudonymisation (entity tables, per-entity thresholds, custom recognizers, the vault, rehydration authorization) · 6. G4 assembled-context guardrail · 7. G5 output guardrail (structural, egress PII, normalized-divergence block, citation range) · 8. Full annotated `guardrails.yaml` · 9. Tuning guide: which tests to re-run after moving each threshold · 10. Evaluation pointer · 11. **Known limitations and explicit bypasses**: English-only classifier, jailbreak blind spot, long-context dilution, PERSON recall on non-Western names, over-masking at the 0.35 egress threshold.
@@ -934,10 +1003,13 @@ Two rows must be written to match the shipped default (`ingest_mode=raw`): maski
 ```
 SAGP_MAX_INPUT_CHARS      = 8000     # gateway, user prompt
 SAGP_MAX_SCAN_UNIT_CHARS  = 20000    # ONE cap, enforced identically at the API and ingest boundaries;
-                                     #   anything larger is split and EVERY piece scanned, with an
-                                     #   assertion that scanned spans cover the whole input
+                                     #   anything larger is split into <=MAX_SCAN_UNIT_CHARS pieces and
+                                     #   EVERY piece scanned, with an assertion that scanned spans cover
+                                     #   the whole input. The two caps compose: each piece is then
+                                     #   independently windowed under its own MAX_WINDOWS budget.
 SAGP_MAX_DOC_BYTES        = 52428800
-SAGP_MAX_WINDOWS          = 16       # truncated=True -> BLOCK/QUARANTINE on EVERY surface
+SAGP_MAX_WINDOWS          = 16       # per-piece window budget; truncated=True (a single piece still
+                                     #   exceeds 16 windows) -> BLOCK/QUARANTINE on EVERY surface
 SAGP_MAX_CTX_CHARS        = 7000
 SAGP_MAX_VAULT_ENTRIES    = 2000
 
@@ -991,8 +1063,8 @@ ort SessionOptions: intra_op_num_threads=4, inter_op_num_threads=1   (leaves 4 c
 **OQ-2 — INT8 accuracy parity on DeBERTa-v3's disentangled attention.**
 `quantize_dynamic` with default op types also quantizes the **relative-position embedding Gather** — the most quantization-sensitive part of the architecture. The parity gate (`|Δ P(INJECTION)| < 0.05`, zero label flips over the full corpus) is a hard build gate, not a spot check. It may simply fail; the fallback ladder in §0 row 7 is the answer, and it must be exercised before sealing.
 
-**OQ-3 — Exact token cost of the assembled prompt under llama3.2's BPE.**
-`SAGP_MAX_CTX_CHARS=7000` is a character proxy. There is no llama3 tokenizer in the runtime venv (`tokenizers` cannot load a GGUF vocab). Either (a) measure the char→token ratio empirically on the real corpus and set the cap conservatively, or (b) call `POST /api/generate` with `"raw": true, "num_predict": 0` and read `prompt_eval_count` to get an exact count from Ollama itself — **I have not verified that this returns a count without generating.**
+**OQ-3 — Exact token cost of the assembled prompt under llama3.2's BPE. (Owner: M7, with the LLM client.)**
+`SAGP_MAX_CTX_CHARS=7000` is a character proxy. There is no llama3 tokenizer in the runtime venv (`tokenizers` cannot load a GGUF vocab). Resolve at **M7** via the `prompt_eval_count` experiment: either (a) measure the char→token ratio empirically on the real corpus and set the cap conservatively, or (b) call `POST /api/generate` with `"raw": true, "num_predict": 0` and read `prompt_eval_count` to get an exact count from Ollama itself — **unverified that this returns a count without generating; the M7 experiment settles it.**
 
 **OQ-4 — Docker `internal: true` + host port publishing on Docker Desktop for Mac 29.5.3.**
 The airgap spec asserts publishing is impossible on an internal network; the rag spec ships a compose file doing exactly that and flags it unverified. The daemon is not running, so neither was tested. Resolve empirically in Phase 0 and record an ADR:
@@ -1002,8 +1074,8 @@ Also test `com.docker.network.bridge.gateway_mode_ipv4=isolated` before adopting
 **OQ-5 — Does `enable_ip_masquerade: "false"` actually block egress on Docker Desktop?**
 It is a real Linux bridge-driver option key, but Docker Desktop containers egress via a userland VM proxy, not a host MASQUERADE rule. Must be measured by the `sagp_vec_noegress` prober (§9.2), not asserted.
 
-**OQ-6 — Presidio's regex-timeout behaviour.**
-Presidio passes `timeout=REGEX_TIMEOUT_SECONDS` to `regex.finditer` specifically to survive catastrophic backtracking. **I did not read `PatternRecognizer.__analyze_patterns` at 2.2.364 to determine whether that timeout propagates out of `analyze()` or is caught and logged, yielding a *partial* result set.** If it is caught, a crafted input silently disables individual recognizers while `analyze()` returns 200 with fewer entities — a textbook silent fail-open in the masking layer. **Read this file before M4 and wrap accordingly.**
+**OQ-6 — Presidio's regex-timeout behaviour. RESOLVED-CONFIRMED (read `presidio-analyzer==2.2.364` source, 2026-07-30).**
+`PatternRecognizer.__analyze_patterns` passes `timeout=REGEX_TIMEOUT_SECONDS` (env-defaulted to 60 s) to `regex.finditer`, then **catches `TimeoutError` per pattern, logs "timeout... skipping", and continues** — so `analyze()` returns a *partial* result set at 200 rather than propagating. A crafted catastrophic-backtracking input therefore silently disables individual recognizers: a textbook silent fail-open in the masking layer. **Resolution (binding on M4):** wrap `analyze()` so any per-pattern regex timeout is surfaced as a guardrail failure → **503**, never swallowed. ARCHITECTURE §10's fail-closed matrix already mandates this unconditionally.
 
 **OQ-7 — `grpcio` exact version.**
 `qdrant-client==1.18.0` hard-depends on `grpcio>=1.41.0` with no upper bound; the resolved version must be pinned into `requirements.runtime.lock`, and its arm64 cp311 wheel must exist for `macosx_14_0_arm64`. It carries a native extension that is outside both egress-guard layers. I did not verify which version the resolver picks.
@@ -1019,3 +1091,6 @@ spaCy publishes only aggregate `ENTS_F` (md 84.73), never per-label PERSON F. On
 
 **OQ-11 — The canonical Presidio documentation URL.**
 Source is confirmed at `github.com/data-privacy-stack/presidio` (verified at tag `2.2.364`), and the `repo` spec reports docs at `presidio.dataprivacystack.org`. I did not fetch that domain. Resolve the redirect once during provisioning and record it in `provision-report.json` **before** writing any doc link.
+
+**OQ-12 — Which key derives `pii_token_hmacs`: `SAGP_AUDIT_HMAC_KEY` or `SAGP_PII_PEPPER`? (Owner: M2, before the audit spine.)**
+`audit/hashing.py` exposes `hmac_token`/`sha256_hex`/`chain_digest`, and the design ships both a distinct audit HMAC key and a PII pepper. It is almost certainly the pepper (domain separation between tamper-evidence and correlation), but it must be pinned, not assumed — getting it wrong couples audit-chain rotation to PII-correlation continuity. Resolve at M2 and correct [OPERATIONS.md](OPERATIONS.md) §1.

@@ -304,8 +304,9 @@ placeholder that scores as benign. Scanning first means the classifier always se
 actual bytes. This ordering is invariant 7 in `CLAUDE.md` ("never mask before scanning") and is
 specified to be enforced by `tests/unit/test_pipeline_order.py`, which does not exist yet.
 
-**(b) C13 embeds `neutral` — the RAW (unmasked) query, not `masked_prompt`.**
-`neutral` is normalized and placeholder-neutralized but **not** anonymized. Embedding the masked string
+**(b) C13 embeds `neutral` — the normalized, unmasked query, not `masked_prompt`.**
+`neutral` is normalized and placeholder-neutralized but **not** anonymized (it is *not* the raw
+message — normalization has already folded homoglyphs/fullwidth and stripped smuggling chars). Embedding the masked string
 would destroy retrieval: under `ingest_mode=raw` (ADR-0006) the corpus is stored unmasked, so a masked
 query and a raw corpus live in different lexical distributions. A query reduced to
 `"what is <PERSON_1>'s <EMAIL_ADDRESS_1>"` carries almost no retrievable signal — the placeholders are
@@ -540,7 +541,7 @@ Precedence, highest wins:
 |---|---|---|
 | 1 | Explicit `Settings(...)` kwargs | tests only |
 | 2 | Process environment | what `bin/sagp-serve` exports from `.env.sealed` **before** `exec`ing the interpreter |
-| 3 | `.env` file | developer convenience; absent in OPERATE |
+| 3 | `.env` file | secrets written by `09_secrets.py` (`0600`); **present and read in OPERATE**, sourced by `bin/sagp-serve` alongside `.env.sealed` |
 | 4 | Field defaults in `config.py` | the documented baseline |
 
 `.env.sealed` must be sourced by the launcher rather than loaded by pydantic-settings, because

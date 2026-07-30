@@ -53,7 +53,7 @@ security controls. That is a security property, not just slowness.
 
 **Three facts about `llama3:8b`, stated together so no other document has to guess.** (1) It **is
 provisioned** — per your call the tag is pulled during PROVISION, costing 4.7 GB of disk. (2) It is
-**one env var away** — set `SAGP_OLLAMA_MODEL=llama3:8b` and it is live; the default remains
+**one env var away** — set `SAGP_LLM_MODEL=llama3:8b` and it is live; the default remains
 `llama3.2:3b-instruct-q4_K_M`. (3) It **does not fit** — it projects to 9.28 GB against the 8 GB
 ceiling, so the app prints a loud startup warning whenever an `8b` tag is set on a host under 16 GB
 and the projected-RSS boot refusal applies. Provisioned is not the same as supported: the tag exists
@@ -69,7 +69,7 @@ Every row below was a genuine contradiction between subsystem specs. One answer 
 |---|---|---|
 | **Runtime inference** | **ONNX Runtime only. No `torch`, no `transformers`, no `huggingface-hub` in the serving venv.** | Removes ~0.45 GB RSS and dissolves a real `ResolutionImpossible` between `transformers` and `huggingface-hub` pins |
 | **Two virtualenvs** | `.venv` (sealed runtime) + `.venv-provision` (online only: torch, transformers, onnx) | The provisioning toolchain never sits on the sealed critical path |
-| Injection model | `protectai/deberta-v3-base-prompt-injection-v2` @ `90c9989b…`, INT8-quantized ONNX | The name in your brief (`DeBERTa-v3-base-injection`) is the v1 ancestor; this is the maintained ONNX-shipping successor |
+| Injection model | `protectai/deberta-v3-base-prompt-injection-v2` @ `90c9989b…`, INT8-quantized ONNX | The name in your brief (`DeBERTa-v3-base-injection`) is the v1 ancestor; this is the ONNX-shipping successor — itself **archived and unmaintained upstream** (§11 item 6), chosen as the best available checkpoint despite that, not because it is maintained |
 | Label resolution | Read `id2label` from `config.json` at boot; **never hardcode index 1** | Hardcoding silently *inverts* the guardrail — blocks benign, allows attacks |
 | Quantization | `quantize_dynamic(..., op_types_to_quantize=None)` (the default) | Passing `["MatMul","Gather"]` *narrows* the set — `Gather` is already in `IntegerOpsRegistry` |
 | Embeddings | `BAAI/bge-small-en-v1.5` @ `5c38ec7c…`, ONNX, **CLS pooling → L2 norm**, 384-d | MiniLM dropped. Pooling is specified because a hand-rolled ONNX path that mean-pools silently halves recall |
@@ -185,7 +185,7 @@ C10 BLOCK list: CREDIT_CARD, AADHAAR, SSN, IBAN…   → 400, byte-identical to 
 C11 PERSON alias resolution (longest-first)        ambiguous → fresh placeholder (over-mask, never cross-link)
 C12 anonymize → masked_prompt + request vault      vault cap 2000 → 400
 --- retrieval ---
-C13 embed the RAW query (not the masked one)       masked queries destroy recall
+C13 embed the NEUTRAL query (normalized + placeholder-neutralized, unmasked — not the masked one)  masked queries destroy recall
 C14 Qdrant query_points, MIN 0.35, must_not quarantined   store error/timeout → 503
 C15 refusal gate: no hit ≥ STRONG 0.50             → refusal.txt, NO LLM call, 200 refuse_insufficient_context
 C16 per chunk: normalize() → neutralize_placeholders()    placeholder found → drop chunk + tamper alarm
@@ -268,13 +268,17 @@ The thing that makes this a blueprint rather than a claim is the **negative cont
 while the host **demonstrably has internet**, run the probes with the guard in `audit` mode and record
 the successes; flip to `enforce`; re-run the identical probes and require `EgressViolation` each time.
 
+The evidence line is specified to read (illustrative — the figures are placeholders, this run has not
+happened):
+
 > *"At 18:31:07Z this host completed a TCP handshake to 1.1.1.1:443 in 24 ms with the guard auditing;
 > with the guard enforcing, the identical probe raised `EgressViolation` in 0.4 ms."*
 
-Nine offline assertions, each asserting on the **`EgressViolation` type** (never a generic connection
-failure) and each **paired with a positive control** so a test cannot pass for the wrong reason:
-L1 patch · L2 audit hook (where L1 is bypassed by construction) · DNS · httpx · subprocess (PEP 578) ·
-AF_UNIX deny incl. `docker.sock` · Presidio-email-with-zero-violations · full manifest verify.
+Nine offline assertions, each network assertion asserting on the **`EgressViolation` type** (never a
+generic connection failure) and each **paired with a positive control** so a test cannot pass for the
+wrong reason: guard-install receipt (if absent, everything below is INVALID) · L1 patch · L2 audit
+hook (where L1 is bypassed by construction) · DNS · httpx · subprocess (PEP 578) · AF_UNIX deny incl.
+`docker.sock` · Presidio-email-with-zero-violations · full manifest verify.
 
 Any negative control failing, guard not installed, `quick`-mode manifest, or an open high-severity gap
 yields **`INVALID`** or `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS` — never `PASS`.
@@ -301,7 +305,7 @@ measured; nothing else in it has. `07_gates.py` and OQ-8 replace the rest with m
 
 The app refuses to boot above 90% projected RSS, and `/readyz` reports measured per-component RSS.
 
-**Disk:** ~5.0 GB lean, **~14.9 GB full** (both venvs + both wheelhouses). Plus ~3 GB *transient* for
+**Disk:** ~9.7 GB lean (includes the `llama3:8b` pull), **~19.6 GB full** (both venvs + both wheelhouses), per BLUEPRINT §8. Plus ~3 GB *transient* for
 `quantize_dynamic`. **Free ≥ 25 GB** before Phase 1; `make doctor` enforces it.
 
 ---

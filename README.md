@@ -6,11 +6,12 @@ reaches the retriever. It is a *template* to copy, not a product — and before 
 read **[What this does not prove](docs/LIMITATIONS.md)**, because a compliance-themed system that
 overclaims is worse than no system at all.
 
-That link is in the first paragraph deliberately. This repository can demonstrate that a specific set
-of software controls refused every egress attempt we could construct, on a host proven to have working
-internet moments earlier. It cannot prove the machine is incapable of reaching the internet. The
-difference between those two sentences is the entire honesty budget of this project, and
-[LIMITATIONS.md](docs/LIMITATIONS.md) spends it line by line.
+That link is in the first paragraph deliberately. This repository is *designed* to demonstrate that a
+specific set of software controls refuses every egress attempt we could construct, on a host proven to
+have working internet moments earlier — a demonstration that has **not yet been run** (the repo is
+documentation-only; see [Status](#status)). Even once run, it cannot prove the machine is incapable of
+reaching the internet. The difference between those two sentences is the entire honesty budget of this
+project, and [LIMITATIONS.md](docs/LIMITATIONS.md) spends it line by line.
 
 ---
 
@@ -19,8 +20,8 @@ difference between those two sentences is the entire honesty budget of this proj
 The demo narrative, in six steps:
 
 1. **Disconnect the machine.** Wi-Fi off, adapters unplugged, `ping -c1 1.1.1.1` must fail — and the
-   in-process egress guard is armed in `enforce` mode, having been demonstrated to refuse every probe
-   we could construct while the network still worked (see
+   in-process egress guard is armed in `enforce` mode, specified to have been demonstrated (at M13,
+   while the network still worked) to refuse every probe we could construct (see
    [The air-gap demonstration](#the-air-gap-demonstration)).
 2. **Ingest a local PDF.** `make ingest FILE="data/samples/employee_handbook.pdf" COLLECTION=handbook`
    extracts text with `pypdf`, detects hidden text (sub-1.0pt fonts, off-MediaBox placement,
@@ -90,8 +91,9 @@ flowchart TD
     end
 
     gw --> n
-    pii -->|"masked prompt"| ret["Retrieval<br/>bge-small ONNX → Qdrant query_points()"]
-    ret --> ctx["Context re-scan<br/>assembled masked context, nonce delimiters"]
+    cls -->|"neutral query<br/>(normalized, unmasked — C13)"| ret["Retrieval<br/>bge-small ONNX → Qdrant query_points()"]
+    ret --> ctx["Context re-scan + mask<br/>assembled context, nonce delimiters"]
+    pii -->|"masked question"| ctx
     ctx --> llm["Ollama<br/>llama3.2:3b-instruct-q4_K_M on 127.0.0.1:11434"]
     llm --> out["Output guardrails<br/>structural · egress PII · divergence · citation range"]
     out --> resp(["200 answer + citations<br/>or 400 PROMPT_REJECTED + incident_id"])
@@ -179,8 +181,8 @@ projected headroom; the **demo profile** (`PROFILE=demo`, Docker Qdrant) project
 it fits, with no margin. Both are PROJECTIONS, not measurements: every line item except the 3.00 GB
 macOS baseline is an ESTIMATE, the INT8 classifier RSS is **UNVERIFIED**, and the totals are
 arithmetic over estimates — see **OQ-1** in [BLUEPRINT.md §14](docs/BLUEPRINT.md).
-Disk: ≈5.0 GB lean, ≈14.9 GB with both venvs and both wheelhouses, plus ~3 GB transient during
-quantization.
+Disk: ≈9.7 GB lean (includes the `llama3:8b` pull), ≈19.6 GB with both venvs and both wheelhouses,
+plus ~3 GB transient during quantization — see [BLUEPRINT.md §8](docs/BLUEPRINT.md).
 
 ---
 

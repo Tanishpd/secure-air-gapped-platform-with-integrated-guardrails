@@ -25,7 +25,7 @@ out, exceeds a window cap, or returns a partial result set produces a rejection 
 `CLAUDE.md` invariants 3 (never bypass the guardrail pipeline) and 6 (never let an `except` silently
 disable a guardrail — fail-CLOSED) exist to keep it that way, and
 `tests/security/test_guardrail_bypass.py` is specified to enforce them with an AST walk plus a
-runtime spy. That test has not been written; it lands at M13.
+runtime spy. That test has not been written; it lands at M10 (per BLUEPRINT §10).
 
 Concretely, fail-closed means these are all the same answer:
 
@@ -55,12 +55,21 @@ hit, delimiter spoof, vault exhaustion — returns byte-identical output:
           "incident_id":"<uuid4>"}}
 ```
 
-with HTTP 400 and a `constant_time_floor(120 ms)` applied to the response path. No score, threshold,
-rule ID, matched substring, entity type, model name, or window index ever leaves the box. A
-403-vs-400 split, a returned score, or an `X-PII-Masked-Count` header would each let an attacker
-hill-climb the thresholds — and because `CreditCardRecognizer` is Luhn-binary, a leaked count is
-literally a card-number validator. `tests/security/test_oracle_uniformity.py` is specified to assert
-that every detector produces the same bytes and the same floor; it does not exist yet (M13).
+with HTTP 400 and a **fixed rejection deadline** applied to the response path — every detector
+rejection (C3 through C12) is padded to the *same* wall-clock deadline, not merely to a floor each
+detector might already exceed. This matters: the injection classifier's own estimated path (60–200 ms)
+plus a late-stage PII reject (another 30–120 ms) would exceed a bare 120 ms floor, so a *minimum*
+would leak stage identity through timing. The `120 ms` value is therefore a **placeholder**: at M13,
+`test_oracle_uniformity.py` measures the slowest detector path and sets the deadline strictly above it,
+and any reject that overruns the deadline is itself a finding. No score, threshold, rule ID, matched
+substring, entity type, model name, or window index ever leaves the box. A 403-vs-400 split, a
+returned score, or an `X-PII-Masked-Count` header would each let an attacker hill-climb the thresholds
+— and because `CreditCardRecognizer` is Luhn-binary, a leaked count is literally a card-number
+validator. `tests/security/test_oracle_uniformity.py` is specified to assert that every detector
+produces the same bytes **and terminates at the same deadline**; the test lands at M10, and its
+deadline value is calibrated from measured latencies at M13. (The one
+exception is C1 `UNSUPPORTED`, a pre-detector schema error that reveals nothing about a detector and is
+not padded — see BLUEPRINT §5.7.)
 
 ---
 
@@ -208,8 +217,8 @@ supposed to handle.
 | `DISREGARD` | "disregard …", "pay no attention to …" | 0.9 | Paraphrase family of the above. |
 | `SYSTEM_PROMPT_PROBE` | "repeat/print/reveal your system prompt / initial instructions / rules" | 0.85 | System-prompt extraction. |
 | `ROLE_HIJACK` | `<\|im_start\|>`, `[INST]`, `### System`, `^\s*(system\|assistant)\s*[:>\]]` | 0.85 | Chat-template injection. |
-| `DAN_PERSONA` | DAN / "developer mode" / "you are now …, you have no restrictions" | 0.8 | **Carries the classifier's documented jailbreak blind spot.** See §4.5. |
-| `NEW_INSTRUCTIONS` | "new instructions:", "updated system message", "the real task is" | 0.75 | Instruction reframing, common in documents. |
+| `DAN_PERSONA` | DAN / "developer mode" / "you are now …, you have no restrictions" | 0.90 | **Carries the classifier's documented jailbreak blind spot.** Weighted **≥ 0.85 deliberately, so it blocks alone on the prompt surface** — the classifier scores ~0.02 on jailbreaks, so if this rule could not block by itself, family B would have *no* operative prompt-surface control. The FPR cost is accepted and measured at M6. See §4.5. |
+| `NEW_INSTRUCTIONS` | "new instructions:", "updated system message", "the real task is" | 0.75 | Instruction reframing, common in documents. Deliberately **sub-0.85**: it does *not* block a user prompt alone (too common in benign text), but clears the 0.70 document-suspect threshold, so it is an operative signal on the *document* surface, not the prompt surface. |
 | `EXFIL_INTENT` | "send/POST/upload … to http(s)://", "email the above to" | 0.85 | Zero-click exfiltration setup. |
 | `MARKDOWN_EXFIL` | `![...](http…)` / `[...](http…)` with an interpolated value | 0.85 | Image-beacon exfiltration; also stripped structurally at G5a. |
 
@@ -232,9 +241,11 @@ if max(classifier_score, heuristic_weight) >= threshold:   # 0.85 on the user pr
 `max`, not `mean`, not a weighted blend. The reason is structural: the two detectors exist to cover
 each other's blind spots. Averaging lets a confident negative from one dilute a confident positive
 from the other — a DAN-persona jailbreak that the classifier is documented not to detect scores
-~0.02 from the model and 0.8 from `DAN_PERSONA`; averaged, that is 0.41 and it ships straight to the
-LLM. The whole point of running a rule table alongside an ML model is that either one gets to raise
-its hand alone.
+~0.02 from the model and 0.90 from `DAN_PERSONA`; `max` gives 0.90 ≥ 0.85 and it is **blocked**, while
+averaging would give 0.46 < 0.85 and it would ship straight to the LLM. This is also *why* the
+blind-spot rules are weighted ≥ 0.85 (§3.4): under `max`, a rule that cannot reach the surface
+threshold cannot raise its hand alone, and family B has no other prompt-surface control. The whole
+point of running a rule table alongside an ML model is that either one gets to block on its own.
 
 The cost is paid in false positives, and it is paid honestly: benign FPR will be measured over the
 benign corpus at M6 and is floored at ≤ 0.10 — a build-gate target, not a result — and the hard
@@ -303,9 +314,17 @@ first 16 windows, allow the rest") is a published, trivially exploitable bypass:
 append the payload, and the scanner never sees it. On the chat path `SAGP_MAX_INPUT_CHARS=8000` means
 a legitimate prompt never approaches the cap, so the block is effectively unreachable for real users.
 
-Note that adjacent-window corroboration (requiring two neighbouring windows to agree) is **not**
-operative on document chunks: a 320-token chunk is exactly one window. It applies only to the
-assembled context at G4, which spans 4–5 windows.
+Note that adjacent-window corroboration is **not** operative on document chunks: a 320-token chunk is
+exactly one window. It applies only to the assembled context at G4 (C19), which spans 4–5 windows.
+
+**Precedence at C19 — `max` governs the block decision; corroboration only escalates.** A single
+window scoring **≥ 0.90 always blocks**, exactly as `aggregate: max` says (a lone hot window in an
+otherwise-innocuous context is still an attack — a compact single-window payload in a `suspect`-indexed
+chunk must not survive the only retrieval-time scan). Corroboration is **additive, never subtractive**:
+when two adjacent windows *both* clear a lower per-window score, that combination *also* blocks — it
+lowers the bar for agreeing pairs, it never raises the bar for a lone high scorer. Corroboration can
+never suppress a block that `max` would have made. (If you ever intend AND-semantics — a lone window
+does *not* block — that is a single-window indirect-injection bypass and must be listed in §11.)
 
 ### 4.4 Thresholds and where they come from
 
@@ -338,7 +357,7 @@ the ONNX session. It is specified to assert:
 **Any failure raises and the application does not start.** Not a warning, not degraded mode. A
 guardrail that cannot prove it is oriented correctly is worse than no guardrail, because the system
 around it will report itself as protected. `make smoke` check `[ 5/14]` is specified to assert that
-the self-test is green; neither the self-test nor `make smoke` exists yet (M12/M13).
+the self-test is green; the self-test lands at M5 with the injection guardrail, `make smoke` at M13.
 
 ### 4.6 What the vendor says this model does not do
 
@@ -414,6 +433,15 @@ card number into `<CREDIT_CARD_1>` and proceeding still means the number was typ
 logs, embeds and generates. There is no answer the LLM could give that is worth that. The rejection
 is byte-identical to an injection rejection — nothing tells the caller *which* control fired.
 
+**Block-list entities on the document and egress surfaces are MASKed, not blocked.** The BLOCK
+disposition is a *prompt-surface* policy (C10). On the retrieved-context surface (C17) and the
+egress-response surface (C22b), the same entities are instead **masked into the vault** — blocking a
+retrieved chunk that legitimately contains a card number would be a denial-of-service on the corpus,
+and blocking the LLM's response would lose a legitimate answer. Masking thresholds on those surfaces:
+`CREDIT_CARD`, `IN_AADHAAR` **binary** (validator-forced), everything else in the block table at
+**egress 0.40**. So a block-list entity is *rejected* if the user types it, but *pseudonymised* if a
+document or the model emits it — it never leaves the box in the clear on any surface.
+
 ### 5.2 MASK list — replaced with a vault placeholder
 
 | Entity | Ingress | Egress | Notes |
@@ -486,19 +514,28 @@ class SealedEmailRecognizer(EmailRecognizer):
         return _TLD(pattern_text).fqdn != ""
 ```
 
-The full fix is four parts, and all four are required:
+The fix has one load-bearing part and three supporting ones:
 
-1. `registry.remove_recognizer("EmailRecognizer", language="en")`, then
+1. **The offline guarantee** — `suffix_list_urls=()` plus `fallback_to_snapshot=True`. Verified against
+   `tldextract==5.3.1` source: with an empty URL tuple the fetch loop iterates zero times and no HTTP
+   request is ever constructed; the bundled `.tld_set_snapshot` is loaded via `pkgutil` instead. This
+   holds **regardless of cache state** — the sealed extractor never phones home, warm cache or cold.
+2. `registry.remove_recognizer("EmailRecognizer", language="en")`, then
    `registry.add_recognizer(SealedEmailRecognizer())`.
-2. `export TLDEXTRACT_CACHE="$PWD/models/tldextract"` in `.env.sealed`.
-3. Warm that cache during provisioning (`scripts/provision/08_tldextract_cache.py`), while online.
-4. Include it in `MANIFEST.json` so a missing or altered snapshot is a boot failure.
+3. `export TLDEXTRACT_CACHE="$PWD/models/tldextract"` in `.env.sealed`, warmed during provisioning
+   (`08_tldextract_cache.py`) **using the same sealed constructor** — tldextract's disk-cache key
+   includes the `urls` tuple, so a cache warmed under the default URLs would not even be read by the
+   `urls=()` extractor. Cache warming + manifest inclusion serve **PSL freshness and tamper-evidence**,
+   *not* the no-egress property (which is item 1 alone).
+4. Include the snapshot in `MANIFEST.json` so a missing or altered copy is a boot failure.
 
-Verified at M13 by air-gap assertion 8, which will analyze an email with the egress guard in
-`enforce` mode and assert `len(egress.violations()) == 0` — **paired with a negative control** that
-the same call with an un-warmed cache *does* violate, so the test cannot pass for the wrong reason.
-Neither the assertion nor its negative control has been written or run; the specification of the
-assertion set is in [AIRGAP_RUNBOOK.md](AIRGAP_RUNBOOK.md) §4.
+Checked at M13 by air-gap assertion 8, which analyzes an email with the egress guard in `enforce`
+mode and asserts `len(egress.violations()) == 0` — **paired with a positive control** that a **stock**
+`EmailRecognizer` (default `suffix_list_urls`, cold cache) *does* raise `EgressViolation`, proving by
+contrast that the sealed constructor is what prevents the fetch. (Asserting an un-warmed *sealed* cache
+violates would be unsatisfiable — the snapshot fallback means it never fetches.) Neither the assertion
+nor its control has been written or run; the assertion set is specified in
+[AIRGAP_RUNBOOK.md](AIRGAP_RUNBOOK.md) §4.
 
 ### 5.5 The vault contract
 
@@ -741,6 +778,13 @@ caller were each arguments to a `scan()` call within the same request. It has no
 Thresholds are **data, not code**. Both files below are hashed and the digest is written into every
 audit record, so a threshold change is visible in the audit trail without diffing the repo.
 
+**One owner for every cap and timeout: `config/guardrails.yaml` is authoritative.** The `SAGP_MAX_*`
+and `timeout_*` names that also appear in `config.py`/`.env` are **overrides, not a second source of
+truth** — at boot, `config.py` loads the YAML values, applies any env override, and the *effective*
+set is what gets hashed into the audit record. A `SAGP_` env var whose name has no matching YAML key
+**refuses to boot** (invariant 12), so a typo cannot silently create a shadow limit. Where a value is
+shown in both this section and BLUEPRINT §12, §8.1 here is canonical.
+
 ### 8.1 `config/guardrails.yaml`
 
 ```yaml
@@ -772,8 +816,8 @@ heuristics:                       # G1b — src/sagp/guardrails/heuristics.py
     DISREGARD:           0.90
     SYSTEM_PROMPT_PROBE: 0.85
     ROLE_HIJACK:         0.85
-    DAN_PERSONA:         0.80     # carries the classifier's documented jailbreak blind spot
-    NEW_INSTRUCTIONS:    0.75
+    DAN_PERSONA:         0.90     # >=0.85 so it blocks alone on the prompt surface (classifier is jailbreak-blind)
+    NEW_INSTRUCTIONS:    0.75     # sub-0.85 by design: document-suspect signal only, not a solo prompt block
     EXFIL_INTENT:        0.85
     MARKDOWN_EXFIL:      0.85
 
@@ -803,6 +847,8 @@ injection:                        # G2 — src/sagp/guardrails/injection/
   corroboration:
     min_adjacent_windows: 2
     applies_to: [assembled_context]   # inoperative on chunks: a 320-token chunk is exactly one window
+    mode: escalate_only           # ADDITIVE: a lone window >= aggregate threshold still blocks (max governs);
+                                  #   corroboration only ADDS blocks for agreeing pairs, never suppresses one (§4.3)
   thresholds:
     user_prompt:        0.85      # C7
     doc_suspect:        0.70      # I7 -> indexed with guard.verdict=suspect
@@ -870,7 +916,9 @@ rejection:                        # the anti-oracle surface
   status: 400
   code: PROMPT_REJECTED
   body: identical_for_every_detector    # no score, rule id, entity type, or matched text. Ever.
-  latency_floor_ms: 120                 # constant_time_floor()
+  rejection_deadline_ms: 120            # PLACEHOLDER — fixed deadline every C3–C12 reject is padded to,
+                                        #   NOT a per-detector floor. M13 sets it strictly above the
+                                        #   slowest measured detector path (test_oracle_uniformity).
   include_scores: false                 # counts and scores go to the audit record only
 
 limits:
@@ -886,14 +934,19 @@ limits:
 # Per-entity thresholds override the defaults in guardrails.yaml.
 # "binary: true" documents that Presidio's validate_result forces MAX_SCORE or drops the result —
 #   the threshold fields are ignored for those entities. Do not tune them; there is nothing to tune.
-# These three tables are exhaustive: an entity absent from all three is not registered, not detected
-#   and not audited. IP_ADDRESS and US_DRIVER_LICENSE are deliberately absent — no recognizer for
-#   either is configured. sha256 of this file goes into every AuditEvent.
+# These three tables are exhaustive over WHICH ENTITIES ARE REGISTERED: an entity absent from all
+#   three is not registered, not detected and not audited. IP_ADDRESS and US_DRIVER_LICENSE are
+#   deliberately absent — no recognizer for either is configured. (The "defaults for anything not
+#   listed" in GUARDRAILS §5.2 refers to a REGISTERED entity whose per-entity threshold is unset — it
+#   inherits guardrails.yaml's ingress 0.50 / egress 0.35 — NOT to unregistered entities, which are
+#   simply invisible.) sha256 of this file goes into every AuditEvent.
 version: 1
 
-block:                            # applied at C10 to the USER PROMPT ONLY.
-                                  # NOT applied to ingested chunks (I6) or retrieved context (C17):
-                                  # a handbook may legitimately contain an IFSC code.
+block:                            # BLOCK is the prompt-surface disposition: applied at C10 to the
+                                  #   USER PROMPT ONLY. On documents (I6/C17) and egress (C22b) these
+                                  #   same entities are MASKed instead (GUARDRAILS §5.1): binary for
+                                  #   CREDIT_CARD/IN_AADHAAR, egress 0.40 for the rest — blocking a
+                                  #   retrieved chunk or the model's answer would be DoS / data loss.
   - {name: CREDIT_CARD,     ingress: binary, source: presidio,  note: "Luhn via validate_result"}
   - {name: IN_AADHAAR,      ingress: binary, source: presidio,  note: "Verhoeff checksum via validate_result"}
   - {name: US_SSN,          ingress: 0.50,   source: presidio}
@@ -949,7 +1002,7 @@ adjustment to make".
 | `EMAIL_ADDRESS`, `CREDIT_CARD`, `IN_AADHAAR` thresholds | — | **No effect.** They are binary via `validate_result`. Change the recognizer or nothing changes. |
 | `retrieval.min_score` (0.35) **down** | `test_retriever.py`, `test_score_normalisation.py` | More context, more noise, more work for G4. Raises the chance a marginal chunk carries a payload. |
 | `retrieval.strong_score` (0.50) **up** | `test_retriever.py`, the 20-unanswerable-question set | More deterministic refusals; fewer weakly-grounded answers. This is the anti-hallucination dial. |
-| `rejection.latency_floor_ms` (120) **down** | `test_oracle_uniformity.py` | Snappier rejections; the timing side channel reopens. The floor must exceed the slowest detector's normal path or it does not mask anything. |
+| `rejection.rejection_deadline_ms` (120, placeholder) **down** | `test_oracle_uniformity.py` | Snappier rejections; the timing side channel reopens. The **deadline** (a fixed pad every C3–C12 reject terminates at, not a floor) must exceed the slowest detector's normal path or it does not mask anything — M13 sets it from measurement. |
 | `pii.vault.max_entries` (2000) **up** | `test_vault.py`, RAM budget | Very large documents mask fully instead of 400-ing; a vault-exhaustion input becomes cheaper to mount. |
 | `pii.spacy_model` → `en_core_web_lg` | `test_pii_recall.py`, the RAM gate | PERSON recall likely ↑ (**unmeasured**); +0.60 GB RSS puts the system at ~7.35 GB and forces the LLM down to `llama3.2:1b`. |
 

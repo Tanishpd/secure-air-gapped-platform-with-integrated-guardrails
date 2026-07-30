@@ -46,8 +46,10 @@ the first release. See THIRD_PARTY_LICENSES.md section 0.
 Pinned dependencies (see THIRD_PARTY_LICENSES.md sections 1 and 2):
 
   Apache-2.0    grpcio, protobuf-adjacent tooling, tokenizers, qdrant-client,
-                python-multipart, phonenumbers, regex, huggingface-hub,
+                python-multipart, phonenumbers, huggingface-hub,
                 transformers, onnx, sentence-transformers, ml_dtypes
+  Apache-2.0 AND CNRI-Python
+                regex   (current releases declare both; see THIRD_PARTY_LICENSES.md)
   MIT           fastapi, pydantic, pydantic-settings, presidio-analyzer,
                 presidio-anonymizer, spacy, thinc-apple-ops, onnxruntime,
                 pyyaml, ollama (Python client), pytest
@@ -79,7 +81,8 @@ Model artefacts (see THIRD_PARTY_LICENSES.md section 3):
   spaCy pipelines en_core_web_md / en_core_web_sm / en_core_web_lg, v3.8.0
     Licensed under the MIT License.
     Published by Explosion AI. Used for named-entity recognition within
-    Microsoft Presidio.
+    Presidio (originally by Microsoft; now maintained at
+    github.com/data-privacy-stack/presidio — see THIRD_PARTY_LICENSES.md).
 
   Meta Llama 3.2 (Ollama tags llama3.2:3b-instruct-q4_K_M, llama3.2:1b)
     Built with Llama.

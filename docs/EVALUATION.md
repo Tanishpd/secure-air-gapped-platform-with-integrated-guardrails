@@ -546,7 +546,7 @@ correct**, and [GUARDRAILS.md](GUARDRAILS.md) must not quote them as tuned.
    improve the guardrail, or record the miss as a known gap in [GUARDRAILS.md](GUARDRAILS.md) §11 and
    [LIMITATIONS.md](LIMITATIONS.md).
 6. **Never** delete or reclassify a failing case to restore a metric. This is the invariant-adjacent rule
-   stated under invariant 12 in `CLAUDE.md` (§5), not invariant 12 itself — invariant 12 is that
+   stated under invariant 12 in `CLAUDE.md` (§2), not invariant 12 itself — invariant 12 is that
    thresholds live in YAML, not Python.
 7. **Update the baseline deliberately.** Commit `docs/metrics/latest.json` in the *same* commit as the
    corpus change, with a message stating every number that moved and why. Because the baseline

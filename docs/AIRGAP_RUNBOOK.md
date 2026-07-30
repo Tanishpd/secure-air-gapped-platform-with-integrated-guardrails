@@ -59,7 +59,7 @@ a mismatch is a startup failure, not a warning; `unseal` requires `REASON=` and 
 which one it tripped on. Do not start Phase A with an unchecked box.
 
 - [ ] **Free disk ≥ 25 GB** — `diskutil info / | grep -i "Free Space"` (also `df -g /`). The full closure is
-      ~14.9 GB, plus ~3 GB transient for quantization, plus headroom. `doctor` hard-fails below
+      ~19.6 GB (BLUEPRINT §8, includes the `llama3:8b` pull), plus ~3 GB transient for quantization, plus headroom. `doctor` hard-fails below
       `sum(artifacts.lock sizes) × 1.5 + 5 GB`. Last measurement on this host: **5,909,774,336 B (5.9 GB) —
       provisioning cannot complete.** Free space first.
 - [ ] **Python 3.11.15** — `~/.local/bin/python3.11 --version` → `Python 3.11.15`. The system default here
@@ -74,9 +74,9 @@ which one it tripped on. Do not start Phase A with an unchecked box.
       targets. Its isolation properties are **untested** — write "untested", never "isolated" — until the
       Phase-0 spike below resolves OQ-4 and OQ-5. ADR-0002 is **Proposed — blocked on that spike**.
 - [ ] **Host is online** — `curl -sS --max-time 5 -o /dev/null -w '%{http_code}\n' https://huggingface.co`
-      → `200`, and `ping -c1 1.1.1.1` → 0% loss. Provisioning downloads ~8.2 GB (ESTIMATE), plus 4.7 GB
-      if the `llama3:8b` tag is pulled at A4, and the online negative control is *invalid* without
-      working internet.
+      → `200`, and `ping -c1 1.1.1.1` → 0% loss. Provisioning downloads ~8.2 GB (ESTIMATE) plus the
+      4.7 GB `llama3:8b` tag pulled at A4 (it **is** pulled — included in BLUEPRINT §8's totals, per
+      PLAN §1), and the online negative control is *invalid* without working internet.
 - [ ] **No other memory-heavy apps** — `ps -A -o rss=,comm= | sort -rn | head -15` (RSS in KB), `vm_stat`,
       and `ollama ps` → empty. 8 GB is a hard ceiling; step A6 wants ~3 GB transient.
 - [ ] **FileVault on** — `fdesetup status` → `FileVault is On.` Under `ingest_mode=raw` the vector store
@@ -161,21 +161,21 @@ OLLAMA_MODELS="$PWD/models/ollama" ollama pull llama3.2:3b-instruct-q4_K_M
 **Expect:** `pulling manifest` → layer digests → `success`, then a printed blob digest list that A10 hashes.
 **Download 3.3 GB** — 2.0 GB (`llama3.2:3b-instruct-q4_K_M`) + 1.3 GB (`llama3.2:1b`, the parity-failure
 fallback). `llama3:8b` **is also pulled** — [PLAN](PLAN.md) §1 records it as an explicit operator choice so
-that it is one env var away — which adds **4.7 GB** (8.0 GB total for this step) and is **not** included in
-the BLUEPRINT §8 disk table. Pulling it does not make it a supported configuration; see below.
+that it is one env var away — which adds **4.7 GB** (8.0 GB total for this step) and **is** included in
+the BLUEPRINT §8 disk totals (lean ≈ 9.7 GB / full ≈ 19.6 GB). Pulling it does not make it a supported configuration; see below.
 **6–14 min (ESTIMATE), or 12–24 min (ESTIMATE) with the 8b tag.**
 **On failure:** confirm `OLLAMA_MODELS` pointed inside the repo *before* the pull. A model pulled into
 `~/.ollama` is outside the manifest and will make A10 and every later boot verification inconsistent.
 Re-pull with the variable set; do not symlink.
 **`llama3:8b` does not fit** — it projects to 9.28 GB (embedded profile; worse under `PROFILE=demo`)
 against an 8 GB ceiling, a projection and not a measurement. macOS compresses and swaps
-rather than OOMs, so it *appears* to work at 3–6 tok/s while the pages evicted are the idle guardrail
-models. That is a security property, not just slowness.
+rather than OOMs, so it *appears* to work at 3–6 tok/s (ESTIMATE) while the pages evicted are the idle
+guardrail models. That is a security property, not just slowness.
 
 ### A5 · `05_docker.sh` — container images (`PROFILE=demo`/`proof` only)
 
 `docker pull` → resolve digest → `docker save -o models/docker/*.tar` for
-`qdrant/qdrant:v1.18.3-unprivileged` (~70 MB compressed) and `alpine:3` (~8 MB, the egress prober).
+`qdrant/qdrant:v1.18.3-unprivileged` (~70 MB compressed) and `alpine:3` (~4 MB compressed / ~8 MB uncompressed, the egress prober).
 **Expect:** a resolved `sha256:` digest per image and two tarballs. **~0.16 GB on disk. 1–3 min (ESTIMATE).**
 **On failure:** on the default profile, skip it — embedded Qdrant needs no image. On `demo`/`proof`, the
 daemon is stopped: `open -a Docker`, wait for `docker info` to answer, retry.
@@ -314,6 +314,25 @@ layers. It covers UID-owned TCP/UDP only, and it does **not** cover Docker, whos
 root-owned VM interface.
 
 macOS `pf` is OpenBSD-4.4 era and its parser is unforgiving. **Dry-run the parse first. This is mandatory.**
+
+The anchor ruleset (`deploy/pf/com.sagp`) is, in sketch — pass loopback, deny everything else out for
+the operator UID (substitute the real uid; `id -u` on the sealed account):
+
+```
+# deploy/pf/com.sagp   — loaded into the "sagp" anchor. Loopback passes; all other egress denied for the UID.
+set skip on lo0
+pass  out quick inet  proto { tcp udp } from 127.0.0.1 to 127.0.0.1
+pass  out quick inet6 proto { tcp udp } from ::1       to ::1
+block drop out log inet  proto { tcp udp } user 501     # <- replace 501 with the sealed account's uid
+block drop out log inet6 proto { tcp udp } user 501
+```
+
+`/etc/pf.conf` needs the two lines that load and reference the anchor:
+
+```
+anchor "sagp"
+load anchor "sagp" from "/path/to/repo/deploy/pf/com.sagp"   # quote the path — it contains spaces
+```
 
 ```bash
 sudo pfctl -n -f /etc/pf.conf     # DRY-RUN PARSE — must report no errors
@@ -460,6 +479,29 @@ worker means a second spaCy pipeline and a second ONNX Runtime session against t
 **embedded** profile projects (0.40 GB projected under `PROFILE=demo`). Both are projections (ESTIMATE),
 not measurements.
 
+`make ollama-up` installs a loopback-bound launchd agent whose environment is sourced from
+`.env.sealed`. Skeleton (`deploy/launchd/com.sagp.ollama.plist`, loaded with `launchctl bootstrap`):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key>            <string>com.sagp.ollama</string>
+  <key>ProgramArguments</key> <array><string>/path/to/repo/bin/ollama-serve</string></array>
+  <key>EnvironmentVariables</key> <dict>
+    <key>OLLAMA_HOST</key>   <string>127.0.0.1:11434</string>   <!-- loopback only -->
+    <key>OLLAMA_MODELS</key> <string>/path/to/repo/models/ollama</string>
+    <key>OLLAMA_ORIGINS</key><string>http://127.0.0.1</string>
+    <key>OLLAMA_NOPRUNE</key><string>1</string>
+  </dict>
+  <key>RunAtLoad</key>  <true/>
+  <key>KeepAlive</key>  <true/>
+</dict></plist>
+```
+
+`bin/ollama-serve` sources `.env.sealed` before exec'ing `ollama serve`, so the plist carries only the
+loopback-critical keys; quote every path (the repo path contains spaces).
+
 **Stop order — reverse.** Stop the app (Ctrl-C `make serve`), then `docker compose down` on `PROFILE=demo`,
 then `make ollama-down`. Stopping Ollama first strands in-flight requests and leaves the 120 s LLM timeout
 to expire.
@@ -601,7 +643,7 @@ evicts first are the idle security controls.
 3. Re-run the gate; read the reported `|Δ P(INJECTION)|` and the label-flip count. **Zero label flips** is
    the hard part — a flip means a previously-blocked attack now scores safe, or vice versa.
 4. Walk the ladder: INT8 → FP32 ONNX (kept on disk for exactly this) → drop the LLM to `llama3.2:1b` to buy
-   back the ~0.50 GB RSS the FP32 session costs (ESTIMATE).
+   back the ~0.50 GB of *additional* RSS the FP32 session costs over INT8 (~0.80 vs ~0.30 GB, both ESTIMATE).
 5. Verify the label index is still resolved from `config.json` `id2label` (`{"0": "SAFE", "1": "INJECTION"}`,
    matched **casefolded**) and not hardcoded. A hardcoded index 1 is the inverted-guardrail bug: it blocks
    benign traffic and allows attacks.
@@ -609,7 +651,7 @@ evicts first are the idle security controls.
 
 ### 7.6 OOM / swap thrash
 
-1. Symptom: a 2–5 s stall at the head of every request, generation at 3–6 tok/s, rising `Swapouts`.
+1. Symptom: a 2–5 s stall at the head of every request, generation in the low single-digit tok/s range, rising `Swapouts`.
 2. Confirm with `vm_stat | grep -E 'Pageouts|Swapouts|compressor'`, `ollama ps`, and `/readyz`.
 3. Find the cause — it is nearly always one of: an `8b` tag is configured (9.28 GB projected — **it does not
    fit in any configuration**) · `PROFILE=demo` is on, adding Docker Desktop's VM (system total ~7.60 GB
@@ -671,7 +713,7 @@ this host.
 | `make lock` | BOOTSTRAP | Resolves both closures once; emits `requirements.*.lock` with `--generate-hashes` | metadata | 2–5 min |
 | `make install` | BOOTSTRAP | `pip install --require-hashes -r requirements.runtime.lock -e .` | ~0.45 GB installed | 2–4 min |
 | `make spike-docker` | BOOTSTRAP (Phase 0) | Must resolve OQ-4 (`internal: true` alongside a published `127.0.0.1:6333`) and OQ-5 (does `enable_ip_masquerade: "false"` block egress on Docker Desktop?) empirically → ADR-0002, which stays **Proposed** until it runs. **Not yet run** (§1) | ~10 MB | ~10 min |
-| `make provision` | PROVISION | Steps 01–10; resumable; idempotent; **non-zero exit on any gate failure** | **~8.2 GB**, plus 4.7 GB if the `llama3:8b` tag is pulled (A4) — BLUEPRINT §8 excludes it | 25–55 min |
+| `make provision` | PROVISION | Steps 01–10; resumable; idempotent; **non-zero exit on any gate failure** | **~8.2 GB**, plus the 4.7 GB `llama3:8b` tag pulled at A4 — included in BLUEPRINT §8's totals | 25–55 min |
 | `make verify-online` | PROVISION | Negative control: probes succeed in `audit` mode, raise `EgressViolation` in `enforce` | — | < 30 s |
 | `make eval` | PROVISION | Corpus run → `docs/metrics/latest.json` (**created at M6; the file does not exist today**); >2pp regression fails the build | — | 3–10 min |
 | `make seal` | PROVISION→OPERATE | Writes `.env.sealed` + `state.json`; installs the `.pth` guard; `seal_generation++` | — | < 10 s |
