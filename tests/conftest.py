@@ -58,3 +58,21 @@ def injection_scanner():  # type: ignore[no-untyped-def]
         policy=pol,
     )
     return InjectionScanner(scorer, pol)
+
+
+@pytest.fixture(scope="session")
+def ollama_client():  # type: ignore[no-untyped-def]
+    """Real Ollama client. Skips if 127.0.0.1:11434 is not reachable."""
+    import socket
+
+    sock = socket.socket()
+    sock.settimeout(0.5)
+    try:
+        sock.connect(("127.0.0.1", 11434))
+    except OSError:
+        pytest.skip("Ollama not reachable at 127.0.0.1:11434 (start it with `make ollama-up`)")
+    finally:
+        sock.close()
+    from sagp.llm.ollama_client import OllamaClient
+
+    return OllamaClient("llama3.2:3b-instruct-q4_K_M")
