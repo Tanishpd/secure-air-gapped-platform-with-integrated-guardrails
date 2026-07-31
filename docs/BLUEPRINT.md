@@ -846,7 +846,7 @@ The right-hand column holds **positive controls** — a companion probe proving 
 |---|---|---|
 | 1 | Guard installed; both layers report in the install receipt | — (if false, everything below is `INVALID`) |
 | 2 | `socket.create_connection(("1.1.1.1",443))` → `EgressViolation` (L1) | loopback echo server connects and echoes |
-| 3 | `_socket.socket().connect(("1.1.1.1",443))` → `EgressViolation` (**L2 only** — L1 is bypassed by construction here; unverified on this host) | `socket.create_connection(("127.0.0.1",11434))` succeeds |
+| 3 | `_socket.socket().connect(("1.1.1.1",443))` → `EgressViolation` (**L2 only** — L1 is bypassed by construction here, and L2 catches it — verified at M11) | `socket.create_connection(("127.0.0.1",11434))` succeeds |
 | 4 | `socket.getaddrinfo("huggingface.co",443)` → `EgressViolation` | `getaddrinfo("localhost",8000)` succeeds |
 | 5 | `httpx.get("https://huggingface.co")` → `EgressViolation` | `httpx.get("http://127.0.0.1:8000/healthz")` → 200 |
 | 6 | `subprocess.Popen(["curl","https://example.com"])` → `EgressViolation` (PEP 578 `subprocess.Popen` event) | `subprocess.Popen([ollama_path,"--version"])` succeeds (allowlisted) |

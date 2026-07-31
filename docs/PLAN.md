@@ -90,7 +90,7 @@ Every row below was a genuine contradiction between subsystem specs. One answer 
    box the first email ever analyzed raises inside Presidio → 503. Fix: `SealedEmailRecognizer` with
    `TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)`, cache warmed at provision.
 2. **The egress monkeypatch is bypassable.** `_socket.socket().connect()` skips the patched
-   `socket.socket.connect` entirely — it bypasses L1 by construction (unverified on this host). Fix: dual layer —
+   `socket.socket.connect` entirely — it bypasses L1 by construction — the L2 audit hook catches it (verified at M11). Fix: dual layer —
    monkeypatch (L1) **plus** `sys.addaudithook` on PEP 578 socket events (L2), which fires at C level.
 3. **Provisioning fetched the wrong files.** The artifact lock excluded `onnx/*` while the runtime was
    ONNX-only — the sealed system would have had no model to load.

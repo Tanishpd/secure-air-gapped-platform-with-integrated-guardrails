@@ -140,7 +140,7 @@ implementation. The build order and the definition of each milestone live in
 | [x] | M8 *(done)* | RAG ingestion: bge-small ONNX embeddings (CLS+L2), token-aware chunking, hidden-text quarantine, idempotent Qdrant upsert; retrieval verified on :memory: | no |
 | [x] | M9 *(done)* | Retrieval + prompt assembly: neutral-query embed, score-thresholded top-k, deterministic refusal gate, sole nonce-delimited prompt builder | no |
 | [x] | **M10** *(done — first demoable slice)* | FastAPI `/v1/chat` wiring C0–C26: input guardrails → retrieval/refusal → mask → LLM → output guardrail → uniform 400. Validated against real Ollama | no (FakeLLM in tests) |
-| [ ] | M11 | Net-guard and manifest verification at boot | no |
+| [x] | **M11** *(done)* | Net-guard: dual-layer egress guard (L1 socket monkeypatch + L2 PEP 578 audit hook), `.pth` boot module reading `.airgap/state.json`, AF_UNIX deny-by-default, argv-exact subprocess allowlist. Raw-socket L1 bypass verified caught by L2 | no |
 | [ ] | M12 | Indirect-injection layer: ingest-time verdicts, quarantine collection, context re-scan | no |
 | [ ] | M13 | **THE DEMONSTRATION** — `verify_airgap.py`, `verify_online.py`, evidence ledger, smoke suite | **offline — the deliverable** |
 | [ ] | M14 | Hardening: pf anchor, Docker profiles, Ed25519 signing, rotation, backup | no |
