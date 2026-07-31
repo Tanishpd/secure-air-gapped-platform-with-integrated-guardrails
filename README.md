@@ -138,7 +138,7 @@ implementation. The build order and the definition of each milestone live in
 | [x] | M6 *(done)* | Metrics gate: attack/benign/PII corpora, `eval_guardrails.py`, measured `docs/metrics/latest.json`. Injection recall 1.0, PII recall 1.0; precision 0.81 / FPR 0.32 miss targets (OPEN known_gaps) | no |
 | [x] | M7 *(done)* | LLM client: buffered `OllamaClient` (loopback, pinned options, fail-closed), `FakeLLM`, versioned prompts — one real generation validated | no |
 | [x] | M8 *(done)* | RAG ingestion: bge-small ONNX embeddings (CLS+L2), token-aware chunking, hidden-text quarantine, idempotent Qdrant upsert; retrieval verified on :memory: | no |
-| [ ] | M9 | Retrieval and prompt assembly | no |
+| [x] | M9 *(done)* | Retrieval + prompt assembly: neutral-query embed, score-thresholded top-k, deterministic refusal gate, sole nonce-delimited prompt builder | no |
 | [ ] | M10 | **FIRST DEMOABLE SLICE** — FastAPI gateway, routes, output guard, wiring | no |
 | [ ] | M11 | Net-guard and manifest verification at boot | no |
 | [ ] | M12 | Indirect-injection layer: ingest-time verdicts, quarantine collection, context re-scan | no |

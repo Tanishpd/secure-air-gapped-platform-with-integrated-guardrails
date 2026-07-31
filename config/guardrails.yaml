@@ -50,3 +50,10 @@ injection:
     doc_quarantine: 0.95 # I7 -> docs_quarantine (never retrieved)
     retrieval: 0.90 # C19 assembled-context re-scan
 
+
+retrieval:
+  # Query-time scoring (cosine over L2-normalized bge-small vectors, so in [0,1]).
+  top_k: 6 # C14 query_points limit
+  min_score: 0.35 # C14 inclusion floor (score_threshold) — below this a hit is not returned
+  strong_score: 0.50 # C15 answer-at-all gate — no hit >= this => deterministic refusal, no LLM call
+  max_ctx_chars: 7000 # C18 assembled-context char budget; drop lowest-scoring chunks until under

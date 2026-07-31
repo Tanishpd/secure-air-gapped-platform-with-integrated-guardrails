@@ -67,12 +67,21 @@ class InjectionPolicy(BaseModel):
         return v
 
 
+class RetrievalPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    top_k: int = Field(gt=0)
+    min_score: float = Field(gt=0.0, le=1.0)
+    strong_score: float = Field(gt=0.0, le=1.0)
+    max_ctx_chars: int = Field(gt=0)
+
+
 class GuardrailsPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     version: int
     heuristics: HeuristicsPolicy
     deobfuscate: DeobfuscatePolicy
     injection: InjectionPolicy
+    retrieval: RetrievalPolicy
     sha256: str  # of the source file bytes
 
 
