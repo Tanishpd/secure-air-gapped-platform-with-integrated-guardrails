@@ -7,6 +7,7 @@ the fast suite (``make test``) never touches real models or a live Ollama.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -24,3 +25,16 @@ def clean_sagp_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         if key.startswith("SAGP_"):
             monkeypatch.delenv(key, raising=False)
     yield
+
+
+@pytest.fixture(scope="session")
+def pii_guardrail():  # type: ignore[no-untyped-def]
+    """Real Presidio + spaCy PII guardrail, built once per session (spaCy is slow)."""
+    from sagp.guardrails.entities import load_entities
+    from sagp.guardrails.pii import PiiGuardrail
+    from sagp.guardrails.presidio_factory import build_analyzer, build_anonymizer
+
+    analyzer = build_analyzer()
+    anonymizer = build_anonymizer()
+    entities = load_entities(Path("config/entities.yaml"))
+    return PiiGuardrail(analyzer, anonymizer, entities)
