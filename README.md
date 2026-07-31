@@ -132,7 +132,7 @@ implementation. The build order and the definition of each milestone live in
 | [x] | M0 *(done)* | Skeleton: `src/sagp/` tree, `pyproject.toml`, `Settings`, `errors.py`, `types.py`, Makefile — `make lint typecheck test` green | no |
 | [x] | M1 *(done)* | **PROVISION EVERYTHING** — `artifacts.lock`, `scripts/provision/01..10`, gates, signed `MANIFEST.json`. Classifier is **FP32 ONNX** (INT8 rejected — inverts this model, OQ-2); `llama3:8b` skipped | **done online** |
 | [x] | M2 *(done)* | Audit spine: closed `AuditEvent`, hash-chained JSONL (tamper-evident), HMAC correlation tokens, write-time scrub, `make audit-verify` | no |
-| [ ] | M3 | Normalizer, placeholders, heuristics, deobfuscation | no |
+| [x] | M3 *(done)* | Normalizer (tag/bidi block; ZWJ/ZWNJ strip-not-block; NFKC + homoglyph fold), placeholders (`neutralize ⊇ rehydrate`), depth-2 deobfuscation, weighted heuristics from `config/guardrails.yaml` | no |
 | [ ] | M4 | PII guardrail: Presidio factory, `SealedEmailRecognizer`, vault, aliases | no |
 | [ ] | M5 | Injection guardrail: label resolution, ONNX backend, scanner, boot self-test | no |
 | [ ] | M6 | Metrics gate: corpora, `eval_guardrails.py`, `docs/metrics/latest.json` | no |

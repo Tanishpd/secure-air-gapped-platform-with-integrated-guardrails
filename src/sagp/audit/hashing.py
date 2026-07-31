@@ -27,7 +27,9 @@ _UNIT_SEP = "\x1f"
 
 def canonical_json(obj: Any) -> bytes:
     """Deterministic JSON bytes: sorted keys, no insignificant whitespace."""
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def sha256_hex(data: bytes) -> str:

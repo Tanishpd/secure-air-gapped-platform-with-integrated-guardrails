@@ -43,12 +43,16 @@ def verify_chain(path: Path) -> ChainResult:
 
             stored = rec.get("chain_digest")
             if rec.get("prev_hash") != prev:
-                return ChainResult(False, count, prev, idx, "prev_hash does not match previous digest")
+                return ChainResult(
+                    False, count, prev, idx, "prev_hash does not match previous digest"
+                )
 
             payload = {k: v for k, v in rec.items() if k != "chain_digest"}
             recomputed = chain_digest(payload)
             if recomputed != stored:
-                return ChainResult(False, count, prev, idx, "chain_digest mismatch (record mutated)")
+                return ChainResult(
+                    False, count, prev, idx, "chain_digest mismatch (record mutated)"
+                )
 
             prev = str(stored)
             count += 1
