@@ -78,6 +78,10 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection puts calls (Depends/Header/…) in argument defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Query", "fastapi.Path"]
+
 [tool.mypy]
 python_version = "3.11"
 packages = ["sagp"]
