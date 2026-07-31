@@ -164,3 +164,47 @@ def client(chat_engines):  # type: ignore[no-untyped-def]
     from sagp.app.main import create_app
 
     return TestClient(create_app(chat_engines), raise_server_exceptions=False)
+
+
+@pytest.fixture
+def run_guarded():  # type: ignore[no-untyped-def]
+    """Run a probe in a fresh interpreter with the egress guard installed.
+
+    The audit hook is process-permanent, so every egress check runs in an
+    isolated subprocess (this is also how the guard runs in production — installed
+    once at process start). Returns the probe's verdict: ALLOWED / BLOCKED / OTHER.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    def _run(probe: str, *, install: str = "install_egress_guard()", setup: str = "") -> str:
+        code = textwrap.dedent(
+            """
+            import socket, subprocess, os
+            from sagp.netguard.egress import install_egress_guard, EgressViolation
+            {setup}
+            {install}
+            try:
+            {probe}
+                print("ALLOWED")
+            except EgressViolation:
+                print("BLOCKED")
+            except Exception as exc:
+                print("OTHER:" + type(exc).__name__)
+            """
+        ).format(
+            setup=setup,
+            install=install,
+            probe="\n".join("    " + line for line in probe.strip().splitlines()),
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, timeout=30
+        )
+        return (
+            result.stdout.strip().splitlines()[-1]
+            if result.stdout.strip()
+            else result.stderr[-200:]
+        )
+
+    return _run
