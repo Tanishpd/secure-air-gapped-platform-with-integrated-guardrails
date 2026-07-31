@@ -139,7 +139,10 @@ def gate_embedding_parity(bge_dir) -> None:
     st = SentenceTransformer("BAAI/bge-small-en-v1.5")
     ref = st.encode(EMB_PROBES, normalize_embeddings=True)
     max_abs = float(np.max(np.abs(onnx_emb - ref)))
-    log(STEP, f"C. embedding parity (ONNX CLS+L2 vs sentence-transformers): max abs diff = {max_abs:.2e}")
+    log(
+        STEP,
+        f"C. embedding parity (ONNX CLS+L2 vs sentence-transformers): max abs diff = {max_abs:.2e}",
+    )
     if max_abs > 1e-4:
         die(STEP, f"embedding parity FAILED (max abs diff {max_abs:.2e} > 1e-4)")
 
@@ -192,7 +195,11 @@ def select_classifier(inj_dir, int8_path) -> dict:
             rss = measure_rss(inj_dir, int8_path)
             log(STEP, f"D. INT8 session RSS delta = {rss:.2f} GB (gate <= 0.35 GB, OQ-1)")
             if rss <= 0.35:
-                choice = {"model": "int8", "path": str(int8_path.relative_to(ROOT)), "rss_gb": round(rss, 2)}
+                choice = {
+                    "model": "int8",
+                    "path": str(int8_path.relative_to(ROOT)),
+                    "rss_gb": round(rss, 2),
+                }
     if not choice:
         # Fall back to FP32 ONNX. It is the reference and already passed correctness.
         fp32 = inj_dir / "onnx" / "model.onnx"
@@ -200,7 +207,10 @@ def select_classifier(inj_dir, int8_path) -> dict:
         log(STEP, f"D. FP32 fallback selected; session RSS delta = {rss:.2f} GB")
         if int8_path.exists():
             shutil.rmtree(int8_path.parent)
-            log(STEP, "removed the broken INT8 artifact (OQ-2: dynamic quant inverts this DeBERTa-v3)")
+            log(
+                STEP,
+                "removed the broken INT8 artifact (OQ-2: dynamic quant inverts this DeBERTa-v3)",
+            )
         choice = {
             "model": "fp32",
             "path": str(fp32.relative_to(ROOT)),

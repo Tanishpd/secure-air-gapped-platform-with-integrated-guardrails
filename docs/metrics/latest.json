@@ -1,0 +1,136 @@
+{
+  "corpus": {
+    "attacks": 39,
+    "benign": 25,
+    "benign_hard": 13,
+    "pii": 18
+  },
+  "floors": {
+    "benign_fpr_ceiling": 0.1,
+    "injection_headline_recall": 0.9,
+    "injection_precision": 0.85,
+    "pii_recall": {
+      "CREDIT_CARD": 0.98,
+      "EMAIL_ADDRESS": 0.98,
+      "IN_AADHAAR": 0.95,
+      "PERSON": 0.8
+    }
+  },
+  "injection": {
+    "benign_fpr": 0.32,
+    "counts": {
+      "benign_blocked": 8,
+      "benign_total": 25,
+      "headline_fn": 0,
+      "headline_tp": 31,
+      "prompt_attacks_blocked": 35
+    },
+    "false_positives": [
+      "BH-001",
+      "BH-003",
+      "BH-004",
+      "BH-005",
+      "BH-007",
+      "BH-010",
+      "BH-011",
+      "BH-012"
+    ],
+    "family_b_recall": 1.0,
+    "family_f_recall": 1.0,
+    "headline_recall": 1.0,
+    "misses": [],
+    "per_family": {
+      "A": {
+        "fn": 0,
+        "recall": 1.0,
+        "tp": 5
+      },
+      "B": {
+        "fn": 0,
+        "recall": 1.0,
+        "tp": 4
+      },
+      "C": {
+        "fn": 0,
+        "recall": 1.0,
+        "tp": 4
+      },
+      "D": {
+        "fn": 0,
+        "recall": 1.0,
+        "tp": 4
+      },
+      "E": {
+        "fn": 0,
+        "recall": 1.0,
+        "tp": 5
+      },
+      "F": {
+        "fn": 0,
+        "recall": 1.0,
+        "tp": 4
+      },
+      "G": {
+        "fn": 0,
+        "recall": 1.0,
+        "tp": 4
+      },
+      "H": {
+        "fn": 0,
+        "recall": 1.0,
+        "tp": 5
+      },
+      "I": {
+        "fn": 0,
+        "recall": 1.0,
+        "tp": 4
+      }
+    },
+    "precision": 0.814
+  },
+  "known_gaps": [
+    {
+      "cause": "hard negatives fire lexical rules (by design) and the archived DeBERTa classifier over-fires on attack-phrase and non-English benign text (GUARDRAILS \u00a711; LIMITATIONS 6/9).",
+      "measured": 0.814,
+      "metric": "injection_precision",
+      "severity": "medium",
+      "status": "OPEN",
+      "target": 0.85
+    },
+    {
+      "cause": "same as injection_precision; the 30%+ hard-negative corpus is designed to stress FPR, and the classifier flags non-English (BH-011/012) and quoted-attack benign text. Reducing this needs a better classifier or context-aware rules (post-M6).",
+      "measured": 0.32,
+      "metric": "benign_fpr",
+      "severity": "medium",
+      "status": "OPEN",
+      "target": 0.1
+    }
+  ],
+  "note": "MEASURED on this host. Recall + PII floors are hard gates; precision/FPR are targets tracked in known_gaps. Regression gate: any metric >2pp worse than baseline fails.",
+  "pii_recall": {
+    "misses": [],
+    "per_type": {
+      "CREDIT_CARD": {
+        "detected": 5,
+        "recall": 1.0,
+        "total": 5
+      },
+      "EMAIL_ADDRESS": {
+        "detected": 5,
+        "recall": 1.0,
+        "total": 5
+      },
+      "IN_AADHAAR": {
+        "detected": 3,
+        "recall": 1.0,
+        "total": 3
+      },
+      "PERSON": {
+        "detected": 5,
+        "recall": 1.0,
+        "total": 5
+      }
+    }
+  },
+  "policy_sha256": "57b4d4ab6336c841740a49db84e92230ea481a30ca36e735eddba11648705962"
+}

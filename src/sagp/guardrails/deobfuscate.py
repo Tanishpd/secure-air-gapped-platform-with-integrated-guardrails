@@ -24,6 +24,69 @@ DEFAULT_MAX_DEPTH = 2
 DEFAULT_MAX_BYTES = 262_144
 DEFAULT_MAX_CANDIDATES = 64
 
+# rot13/reverse/leet/spaced transform ANY text, so applied to a benign English
+# sentence they produce gibberish that the classifier can misfire on. They are
+# only kept when the decode REVEALS English that the source did not have — i.e.
+# the source was actually obfuscated. base64/hex/base32 are structurally gated
+# (they only match encoded blobs) and need no English check.
+_TRANSFORM_CODECS = frozenset({"rot13", "leet", "reverse", "spaced"})
+_COMMON_WORDS = frozenset(
+    [
+        "the",
+        "and",
+        "you",
+        "are",
+        "for",
+        "with",
+        "this",
+        "that",
+        "have",
+        "not",
+        "your",
+        "but",
+        "all",
+        "can",
+        "will",
+        "would",
+        "should",
+        "ignore",
+        "previous",
+        "instructions",
+        "system",
+        "prompt",
+        "reveal",
+        "disregard",
+        "forget",
+        "rules",
+        "answer",
+        "now",
+        "new",
+        "task",
+        "above",
+        "please",
+        "mode",
+        "developer",
+        "restrictions",
+        "from",
+        "what",
+        "how",
+        "why",
+        "when",
+        "who",
+        "output",
+        "print",
+        "repeat",
+        "above",
+        "before",
+    ]
+)
+
+
+def _looks_english(s: str) -> bool:
+    words = re.findall(r"[a-z]{2,}", s.lower())
+    return len(words) >= 2 and sum(1 for w in words if w in _COMMON_WORDS) >= 2
+
+
 _B64_RE = re.compile(r"[A-Za-z0-9+/=]{12,}")
 _B32_RE = re.compile(r"[A-Z2-7=]{16,}")
 _HEX_RE = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
@@ -139,6 +202,10 @@ def expand(
                 dec = decoder(cur)
                 if not dec or dec in seen:
                     continue
+                if name in _TRANSFORM_CODECS and not (
+                    _looks_english(dec) and not _looks_english(cur)
+                ):
+                    continue  # transform produced gibberish, not a revealed payload
                 if len(dec.encode("utf-8")) > max_bytes:
                     result.truncated = True
                     continue

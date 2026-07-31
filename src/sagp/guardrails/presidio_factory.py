@@ -16,6 +16,7 @@ from typing import cast
 
 from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
 from presidio_analyzer.nlp_engine import NlpEngineProvider
+from presidio_analyzer.predefined_recognizers import InAadhaarRecognizer, InPanRecognizer
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.operators import Operator, OperatorType
 
@@ -70,6 +71,11 @@ def build_analyzer(
     # Swap stock EmailRecognizer for the sealed one (no PSL phone-home).
     registry.remove_recognizer("EmailRecognizer")
     registry.add_recognizer(SealedEmailRecognizer(cache_dir=tldextract_cache))
+    # India recognizers are predefined but NOT loaded by languages=["en"] — without
+    # this, IN_AADHAAR / IN_PAN are policy entities with no recognizer (0 recall).
+    # Found by the M6 metrics gate.
+    registry.add_recognizer(InAadhaarRecognizer())
+    registry.add_recognizer(InPanRecognizer())
     for rec in build_custom_recognizers(recognizers_dir):
         registry.add_recognizer(rec)
 
