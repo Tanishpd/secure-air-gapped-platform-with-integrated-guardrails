@@ -10,7 +10,7 @@ This is the file a coding agent loads before touching this repo. It is a set of 
 
 **Sealed threat posture, one line:** the operator is assumed cooperative, the host is assumed intact, and the adversary is a hostile *document* or a hostile *dependency* — so every control fails closed, every rejection is byte-identical, and nothing that leaves the process carries a score, a count, or a name.
 
-**Read this file mostly as a specification. Current build status is §10 — consult it before assuming what exists.** M-DOCS and M0–M7 are built and merged (`src/`, `tests/`, `scripts/`, `config/`, Makefile all exist); M8+ is not. Many *Check:* lines in §2, targets in §4, and tests in §8 still describe milestones not yet built — read those as "will", not "did". A few figures are now MEASURED: the M1 facts (injection classifier is FP32 not INT8 — OQ-2; RSS 0.30 GB — OQ-1) and the **M6 guardrail metrics in `docs/metrics/latest.json`** (injection headline recall 1.0; PII recall 1.0 for EMAIL/CARD/AADHAAR/PERSON; precision 0.81 and benign FPR 0.32 — both **miss their targets**, tracked as OPEN `known_gaps`). Treat every RAM/latency number as an ESTIMATE.
+**Read this file mostly as a specification. Current build status is §10 — consult it before assuming what exists.** M-DOCS and M0–M8 are built and merged (`src/`, `tests/`, `scripts/`, `config/`, Makefile all exist); M9+ is not. Many *Check:* lines in §2, targets in §4, and tests in §8 still describe milestones not yet built — read those as "will", not "did". A few figures are now MEASURED: the M1 facts (injection classifier is FP32 not INT8 — OQ-2; RSS 0.30 GB — OQ-1) and the **M6 guardrail metrics in `docs/metrics/latest.json`** (injection headline recall 1.0; PII recall 1.0 for EMAIL/CARD/AADHAAR/PERSON; precision 0.81 and benign FPR 0.32 — both **miss their targets**, tracked as OPEN `known_gaps`). Treat every RAM/latency number as an ESTIMATE.
 
 ---
 
@@ -272,7 +272,7 @@ Reasonable-sounding changes that are wrong *here*:
 
 ## 10. Current status
 
-**As of 2026-07-31: M-DOCS, M0–M7 are complete. RAG/gateway code (M8+) is not built.**
+**As of 2026-07-31: M-DOCS, M0–M8 are complete. Retrieval/gateway code (M9+) is not built.**
 
 - **M0 (done):** `src/sagp/` skeleton (config/errors/types/version + subpackage tree), `pyproject.toml`, `Makefile`, ruff+mypy, `tests/` — `make lint typecheck test` green on Python 3.11.15.
 - **M1 (done):** `artifacts.lock`, `requirements.provision.txt`, `scripts/provision/01..10`, `netguard/{phase,manifest}.py`, `make provision`/`verify-manifest`. Models are provisioned on this host and `MANIFEST.json` is signed + committed. **`llama3:8b` was skipped** (disk-constrained; does not fit in 8 GB anyway).
@@ -282,7 +282,8 @@ Reasonable-sounding changes that are wrong *here*:
 - **M5 (done):** the injection classifier (C6–C7) — `guardrails/injection/{labels,scanner,onnx_backend,selftest}.py` + the `injection:` section of `guardrails.yaml`. Label index resolved from `config.json` `id2label` (never hardcoded — invariant 5; refuses opaque `LABEL_n`); FP32 ONNX scorer (`intra=4/inter=1`, feed from `get_inputs()`); token-level sliding windows (512/128, cap 16, max aggregation) so a tail attack isn't truncated away; per-surface verdicts; scorer error → `GuardrailUnavailable`; boot self-test refuses to start if an attack scores clean.
 - **M6 (done):** the metrics gate — `tests/corpus/{attacks,benign,pii}.jsonl`, `guardrails/evaluate.py` (`decide_injection` C3–C7 + metrics), `scripts/eval_guardrails.py`, `docs/metrics/latest.json`, `make eval`, `tests/metrics/`. **First measured guardrail numbers.** Headline injection recall **1.0** (families A,C,D,E,G,H,I; B and F reported separately, also 1.0); PII recall **1.0** (EMAIL/CARD/AADHAAR/PERSON). Precision **0.81** and benign FPR **0.32 miss their targets** (0.85 / 0.10) — recorded as OPEN `known_gaps` (hard negatives fire lexical rules by design; the archived classifier over-fires on attack-phrase and non-English benign text). Recall + PII floors are hard-gated; precision/FPR are regression-gated from the baseline. Surfaced and fixed two real bugs: the deobfuscator scanned rot13/reverse noise of benign text (FPR 0.64→0.32), and `build_analyzer` never registered the India recognizers so `IN_AADHAAR`/`IN_PAN` had 0 recall.
 - **M7 (done):** the LLM client — `llm/{base,fake,ollama_client}.py` + `llm/prompts/{system_rag,refusal}.txt`. Single-turn, **buffered** (never streamed — you can't un-send a leaked token); `OllamaClient` (loopback, `stream=False`, pinned options `temp=0.1/top_p=0.9/num_predict=512/seed=42`, no per-request `num_ctx`); timeout/error → `GuardrailUnavailable` (503) with the `EgressViolation` carve-out; `FakeLLM` records the exact payloads for the flagship spy test; prompt sha256 helper for the audit record. Validated with one real generation against local `llama3.2:3b`.
-- **Absent (M8+):** RAG (ingest/retrieval/embeddings), FastAPI gateway, the pipeline wiring C0–C26, the egress guard's L1/L2 install, `docker-compose.yml`.
+- **M8 (done):** RAG ingestion (I1–I11 subset) — `rag/{embeddings,chunking,loaders,vectorstore,qdrant_store,ingest}.py` + `scripts/gen_sample_pdf.py` + `data/samples/*.pdf`. `BgeEmbedder` (bge-small ONNX, **CLS pooling** then L2, query prefix, `token_type_ids` fed); token-aware page-scoped chunking (320/64/min32, offset-mapped so stored text is a real substring); `pypdf` loader with a **hidden-text visitor** (sub-1pt / off-MediaBox → page quarantined, never indexed); `QdrantStore` adapter (`:memory:`/embedded, `uuid5(doc_sha256:index)` ids, `query_points`, `delete_by_doc`) so re-ingest is idempotent (count unchanged). End-to-end tested on `:memory:`: a "parental leave" query retrieves the right chunk. Ingest-time injection scan + `docs_quarantine` are M12; masking is at retrieval (`ingest_mode=raw`).
+- **Absent (M9+):** retrieval + prompt assembly (`rag/{retriever,prompt}.py`), FastAPI gateway, the pipeline wiring C0–C26, the egress guard's L1/L2 install, `docker-compose.yml`.
 
 **Two figures are now MEASURED on this host (M1), the rest of §7 remains ESTIMATE:** the injection classifier is **FP32 ONNX** (INT8 dynamic quant *inverts* this DeBERTa-v3 — OQ-2 resolved), and its session RSS is **0.30 GB measured** (OQ-1 resolved; ORT mmaps the weights, so the FP32 fallback does not change the RAM budget). The embedding parity gate passed at 1.6e-07. Every other RAM/latency/recall number is still unmeasured. Environment facts (PLAN §1): 8 GB RAM (hard ceiling), Apple M2, Python 3.11.15.
 
@@ -296,7 +297,7 @@ M0      skeleton: src/sagp tree, Settings, errors, types, Makefile   ← DONE
 M1      PROVISION EVERYTHING (online, one-way door, longest single item)  ← DONE
 M2      audit spine — lands BEFORE any guardrail exists   ← DONE
 M3 normalizer · M4 PII · M5 injection · M6 metrics gate · M7 LLM client ← ALL DONE
-M8 ingestion ← next · M9 retrieval · M10 FastAPI gateway   ← first demoable slice
+M8 ingestion ← DONE · M9 retrieval ← next · M10 FastAPI gateway   ← first demoable slice
 M11 net-guard · M12 indirect injection · M13 THE DEMONSTRATION (offline, paired negative controls)
 M14 hardening · M15 documentation revisited with real measurements
 ```

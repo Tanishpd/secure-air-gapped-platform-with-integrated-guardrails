@@ -15,7 +15,7 @@ MYPY    := "$(VENV)/bin/mypy"
 PYTEST  := "$(VENV)/bin/pytest"
 
 .PHONY: help doctor venvs install install-provision lint format typecheck test clean \
-        provision verify-manifest audit-verify
+        provision verify-manifest audit-verify eval samples
 
 help:  ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -70,6 +70,9 @@ provision:  ## PROVISION EVERYTHING (online, one-way door): steps 01..10 in orde
 
 verify-manifest:  ## Full manifest verification (recompute every hash + signature)
 	$(PYTHON) -m sagp.netguard.manifest
+
+samples:  ## Generate the synthetic sample PDFs into data/samples/
+	$(PYTHON) scripts/gen_sample_pdf.py
 
 eval:  ## Corpus metrics -> docs/metrics/latest.json (real models; commit the result)
 	$(PYTHON) scripts/eval_guardrails.py

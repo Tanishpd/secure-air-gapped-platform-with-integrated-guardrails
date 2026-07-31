@@ -1,0 +1,53 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Length 528 >>
+stream
+BT /F1 18 Tf 72 720 Td (ACME Corp Employee Handbook) Tj ET
+BT /F1 14 Tf 72 680 Td (Section 1 - Leave Policy) Tj ET
+BT /F1 11 Tf 72 650 Td (Full-time employees are entitled to 20 days of parental leave per year.) Tj ET
+BT /F1 11 Tf 72 630 Td (Leave must be requested at least two weeks in advance through the HR portal.) Tj ET
+BT /F1 11 Tf 72 610 Td (For questions, contact HR lead Priya Sharma at hr-lead@example.com.) Tj ET
+BT /F1 11 Tf 72 590 Td (You may also call the HR desk on +1-202-555-0173 during business hours.) Tj ET
+
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> /Contents 3 0 R >>
+endobj
+5 0 obj
+<< /Length 364 >>
+stream
+BT /F1 14 Tf 72 720 Td (Section 2 - Remote Work) Tj ET
+BT /F1 11 Tf 72 690 Td (Employees may work remotely up to three days per week with manager approval.) Tj ET
+BT /F1 11 Tf 72 670 Td (Equipment for remote work is provided after the probation period ends.) Tj ET
+BT /F1 11 Tf 72 650 Td (The main office opens at 9:00 AM on weekdays and closes at 6:00 PM.) Tj ET
+
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000700 00000 n 
+0000000826 00000 n 
+0000001241 00000 n 
+0000001367 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1437
+%%EOF
