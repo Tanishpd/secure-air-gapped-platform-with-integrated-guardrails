@@ -76,3 +76,47 @@ def ollama_client():  # type: ignore[no-untyped-def]
     from sagp.llm.ollama_client import OllamaClient
 
     return OllamaClient("llama3.2:3b-instruct-q4_K_M")
+
+
+_BGE_DIR = Path("models/hf/bge-small-en-v1.5")
+
+
+@pytest.fixture(scope="session")
+def chunk_tokenizer():  # type: ignore[no-untyped-def]
+    tp = _BGE_DIR / "tokenizer.json"
+    if not tp.exists():
+        pytest.skip("bge tokenizer not provisioned")
+    from sagp.rag.ingest import build_chunk_tokenizer
+
+    return build_chunk_tokenizer(tp)
+
+
+@pytest.fixture(scope="session")
+def bge_embedder():  # type: ignore[no-untyped-def]
+    model = _BGE_DIR / "onnx" / "model.onnx"
+    if not model.exists():
+        pytest.skip("bge model not provisioned (run `make provision`)")
+    from sagp.rag.embeddings import BgeEmbedder
+
+    return BgeEmbedder(
+        model, _BGE_DIR / "tokenizer.json", revision="5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+    )
+
+
+@pytest.fixture(scope="session")
+def sample_pdfs(tmp_path_factory):  # type: ignore[no-untyped-def]
+    """Generate the two sample PDFs hermetically (also exercises gen_sample_pdf)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "gen_sample_pdf", Path("scripts/gen_sample_pdf.py")
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    d = tmp_path_factory.mktemp("samples")
+    handbook = d / "employee_handbook.pdf"
+    handbook.write_bytes(mod.handbook())
+    poisoned = d / "poisoned_appendix.pdf"
+    poisoned.write_bytes(mod.poisoned_appendix())
+    return {"handbook": handbook, "poisoned": poisoned}
