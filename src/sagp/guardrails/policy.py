@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -37,11 +38,41 @@ class DeobfuscatePolicy(BaseModel):
     max_bytes: int = Field(gt=0)
 
 
+class LabelsPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    positive_aliases: tuple[str, ...]
+    negative_aliases: tuple[str, ...]
+
+
+class WindowPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    max_length: int = Field(gt=0)
+    stride: int = Field(gt=0)
+    max_windows: int = Field(gt=0)
+    aggregate: Literal["max"]  # 'mean' is the long-context dilution attack — not allowed
+
+
+class InjectionPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    labels: LabelsPolicy
+    window: WindowPolicy
+    thresholds: dict[str, float]
+
+    @field_validator("thresholds")
+    @classmethod
+    def _thresholds_in_range(cls, v: dict[str, float]) -> dict[str, float]:
+        for name, t in v.items():
+            if not (0.0 < t <= 1.0):
+                raise ValueError(f"injection threshold {name}={t} outside (0.0, 1.0]")
+        return v
+
+
 class GuardrailsPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     version: int
     heuristics: HeuristicsPolicy
     deobfuscate: DeobfuscatePolicy
+    injection: InjectionPolicy
     sha256: str  # of the source file bytes
 
 

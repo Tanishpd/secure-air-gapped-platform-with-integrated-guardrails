@@ -10,7 +10,7 @@ This is the file a coding agent loads before touching this repo. It is a set of 
 
 **Sealed threat posture, one line:** the operator is assumed cooperative, the host is assumed intact, and the adversary is a hostile *document* or a hostile *dependency* — so every control fails closed, every rejection is byte-identical, and nothing that leaves the process carries a score, a count, or a name.
 
-**Read this file as a specification, not a report.** Nothing described below has been built or run: there is no `src/`, `tests/`, `scripts/`, `config/` or Makefile (§10). Every *Check:* line in §2, every target in §4, every test in §8 and every metric floor states what must exist — read them as "will", never as "did". No figure anywhere in this repo has been measured.
+**Read this file mostly as a specification. Current build status is §10 — consult it before assuming what exists.** M-DOCS and M0–M5 are built and merged (`src/`, `tests/`, `scripts/`, `config/`, Makefile all exist); M6+ is not. Many *Check:* lines in §2, targets in §4, and tests in §8 still describe milestones not yet built — read those as "will", not "did". Almost no *figure* here has been measured: the exceptions are the M1 measurements (injection classifier is FP32 not INT8 — OQ-2; its RSS 0.30 GB — OQ-1) and the environment facts in PLAN §1. Treat every other latency/RAM/recall number as an ESTIMATE.
 
 ---
 
@@ -272,14 +272,15 @@ Reasonable-sounding changes that are wrong *here*:
 
 ## 10. Current status
 
-**As of 2026-07-31: M-DOCS, M0–M4 are complete. Injection/RAG/gateway code (M5+) is not built.**
+**As of 2026-07-31: M-DOCS, M0–M5 are complete. Metrics/RAG/LLM/gateway code (M6+) is not built.**
 
 - **M0 (done):** `src/sagp/` skeleton (config/errors/types/version + subpackage tree), `pyproject.toml`, `Makefile`, ruff+mypy, `tests/` — `make lint typecheck test` green on Python 3.11.15.
 - **M1 (done):** `artifacts.lock`, `requirements.provision.txt`, `scripts/provision/01..10`, `netguard/{phase,manifest}.py`, `make provision`/`verify-manifest`. Models are provisioned on this host and `MANIFEST.json` is signed + committed. **`llama3:8b` was skipped** (disk-constrained; does not fit in 8 GB anyway).
 - **M2 (done):** the audit spine — `audit/{events,hashing,sink,verify,scrub,quarantine,redactors}.py` + `utils/ids.py`, `make audit-verify`. Closed `AuditEvent` schema, hash-chained JSONL (tamper detected at the right index), HMAC correlation tokens, write-time scrub. It lands BEFORE any guardrail so decisions have somewhere tamper-evident to record.
 - **M3 (done):** the normalizer stage (C3–C5) — `guardrails/{normalize,placeholders,deobfuscate,heuristics,policy}.py` + `config/guardrails.yaml`. Normalize blocks only tag/bidi and strip-but-never-blocks ZWJ/ZWNJ (Indic/Arabic pass); one shared `PLACEHOLDER_RE` (neutralize ⊇ rehydrate, proven); depth-2 deobfuscation; weighted heuristics with weights loaded+hashed from `guardrails.yaml`.
 - **M4 (done):** the PII guardrail (C9–C12) — `guardrails/{presidio_factory,recognizers,vault,aliases,entities,pii}.py` + `config/entities.yaml` + `config/recognizers/*.yaml`. Real Presidio+spaCy `en_core_web_md`; `SealedEmailRecognizer` (no tldextract phone-home); request-scoped `PiiVault` (unpicklable, leak-proof repr, capped); PERSON alias resolution; BLOCK-list → `PromptRejected`; MASK via the vault operator; analyze under a wall-clock deadline → `GuardrailUnavailable` (OQ-6 mitigation).
-- **Absent (M5+):** the injection classifier scanner, the pipeline that wires C0–C26, RAG, LLM client, FastAPI gateway, the egress guard's L1/L2 install, `docker-compose.yml`, `docs/metrics/`.
+- **M5 (done):** the injection classifier (C6–C7) — `guardrails/injection/{labels,scanner,onnx_backend,selftest}.py` + the `injection:` section of `guardrails.yaml`. Label index resolved from `config.json` `id2label` (never hardcoded — invariant 5; refuses opaque `LABEL_n`); FP32 ONNX scorer (`intra=4/inter=1`, feed from `get_inputs()`); token-level sliding windows (512/128, cap 16, max aggregation) so a tail attack isn't truncated away; per-surface verdicts; scorer error → `GuardrailUnavailable`; boot self-test refuses to start if an attack scores clean.
+- **Absent (M6+):** the metrics gate + corpus, RAG (ingest/retrieval/embeddings), LLM client, FastAPI gateway, the pipeline wiring C0–C26, the egress guard's L1/L2 install, `docker-compose.yml`, `docs/metrics/`.
 
 **Two figures are now MEASURED on this host (M1), the rest of §7 remains ESTIMATE:** the injection classifier is **FP32 ONNX** (INT8 dynamic quant *inverts* this DeBERTa-v3 — OQ-2 resolved), and its session RSS is **0.30 GB measured** (OQ-1 resolved; ORT mmaps the weights, so the FP32 fallback does not change the RAM budget). The embedding parity gate passed at 1.6e-07. Every other RAM/latency/recall number is still unmeasured. Environment facts (PLAN §1): 8 GB RAM (hard ceiling), Apple M2, Python 3.11.15.
 
@@ -292,7 +293,7 @@ M-DOCS  all markdown into the repo, git init         ← DONE
 M0      skeleton: src/sagp tree, Settings, errors, types, Makefile   ← DONE
 M1      PROVISION EVERYTHING (online, one-way door, longest single item)  ← DONE
 M2      audit spine — lands BEFORE any guardrail exists   ← DONE
-M3 normalizer ← DONE · M4 PII ← DONE · M5 injection ← next · M6 metrics gate · M7 LLM client
+M3 normalizer ← DONE · M4 PII ← DONE · M5 injection ← DONE · M6 metrics gate ← next · M7 LLM client
 M8 ingestion · M9 retrieval · M10 FastAPI gateway   ← first demoable slice
 M11 net-guard · M12 indirect injection · M13 THE DEMONSTRATION (offline, paired negative controls)
 M14 hardening · M15 documentation revisited with real measurements

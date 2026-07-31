@@ -38,3 +38,23 @@ def pii_guardrail():  # type: ignore[no-untyped-def]
     anonymizer = build_anonymizer()
     entities = load_entities(Path("config/entities.yaml"))
     return PiiGuardrail(analyzer, anonymizer, entities)
+
+
+@pytest.fixture(scope="session")
+def injection_scanner():  # type: ignore[no-untyped-def]
+    """Real ONNX injection scanner. Skips if the model has not been provisioned."""
+    model = Path("models/hf/injection/onnx/model.onnx")
+    if not model.exists():
+        pytest.skip("injection model not provisioned (run `make provision`)")
+    from sagp.guardrails.injection.onnx_backend import OnnxInjectionScorer
+    from sagp.guardrails.injection.scanner import InjectionScanner
+    from sagp.guardrails.policy import load_policy
+
+    pol = load_policy(Path("config/guardrails.yaml")).injection
+    scorer = OnnxInjectionScorer(
+        model_path=model,
+        tokenizer_path=Path("models/hf/injection/onnx/tokenizer.json"),
+        config_path=Path("models/hf/injection/config.json"),
+        policy=pol,
+    )
+    return InjectionScanner(scorer, pol)

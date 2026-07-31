@@ -134,7 +134,7 @@ implementation. The build order and the definition of each milestone live in
 | [x] | M2 *(done)* | Audit spine: closed `AuditEvent`, hash-chained JSONL (tamper-evident), HMAC correlation tokens, write-time scrub, `make audit-verify` | no |
 | [x] | M3 *(done)* | Normalizer (tag/bidi block; ZWJ/ZWNJ strip-not-block; NFKC + homoglyph fold), placeholders (`neutralize ⊇ rehydrate`), depth-2 deobfuscation, weighted heuristics from `config/guardrails.yaml` | no |
 | [x] | M4 *(done)* | PII guardrail: real Presidio+spaCy, `SealedEmailRecognizer` (no phone-home), request-scoped vault (unpicklable, leak-proof, capped), PERSON aliases, BLOCK-list, deadline→503 | no |
-| [ ] | M5 | Injection guardrail: label resolution, ONNX backend, scanner, boot self-test | no |
+| [x] | M5 *(done)* | Injection guardrail: label resolution from `config.json` (never hardcoded), FP32 ONNX backend, sliding-window scanner (tail attack not truncated away), boot self-test | no |
 | [ ] | M6 | Metrics gate: corpora, `eval_guardrails.py`, `docs/metrics/latest.json` | no |
 | [ ] | M7 | LLM client: `ollama_client.py`, `FakeLLM`, versioned prompts | no |
 | [ ] | M8 | RAG ingestion: loaders, chunking, embeddings, Qdrant store | no |
