@@ -30,3 +30,23 @@ deobfuscate:
   codecs: [base64, base32, hex, rot13, leet, reverse, spaced]
   max_depth: 2
   max_bytes: 262144
+
+injection:
+  # Runtime classifier is FP32 ONNX — INT8 dynamic quant inverts this DeBERTa-v3
+  # (OQ-2, ADR-0004); the exact model is recorded in models/derived/classifier_choice.json.
+  labels:
+    # The index is resolved from the checkpoint's config.json id2label at boot,
+    # matched casefolded. NEVER hardcode index 1 — that silently inverts the guard.
+    positive_aliases: [injection, prompt_injection, malicious, unsafe, attack, jailbreak, positive]
+    negative_aliases: [safe, benign, clean, legitimate, negative]
+  window:
+    max_length: 512 # the checkpoint's trained sequence length
+    stride: 128 # 25% overlap so a boundary-straddling payload appears whole somewhere
+    max_windows: 16 # truncated=True -> block/quarantine on EVERY surface
+    aggregate: max # NOT mean — mean is the long-context dilution attack
+  thresholds:
+    user_prompt: 0.85 # C7
+    doc_suspect: 0.70 # I7 -> indexed as guard.verdict=suspect (still retrievable)
+    doc_quarantine: 0.95 # I7 -> docs_quarantine (never retrieved)
+    retrieval: 0.90 # C19 assembled-context re-scan
+
