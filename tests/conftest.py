@@ -119,7 +119,9 @@ def sample_pdfs(tmp_path_factory):  # type: ignore[no-untyped-def]
     handbook.write_bytes(mod.handbook())
     poisoned = d / "poisoned_appendix.pdf"
     poisoned.write_bytes(mod.poisoned_appendix())
-    return {"handbook": handbook, "poisoned": poisoned}
+    poisoned_visible = d / "poisoned_visible.pdf"
+    poisoned_visible.write_bytes(mod.poisoned_visible())
+    return {"handbook": handbook, "poisoned": poisoned, "poisoned_visible": poisoned_visible}
 
 
 @pytest.fixture(scope="module")
@@ -144,6 +146,7 @@ def chat_engines(injection_scanner, pii_guardrail, bge_embedder, chunk_tokenizer
     tokens = {
         "tok-chat": Principal(id="u1", scopes=frozenset({"chat", "ingest"})),
         "tok-reveal": Principal(id="u2", scopes=frozenset({"chat", "ingest", "pii:reveal"})),
+        "tok-chatonly": Principal(id="u3", scopes=frozenset({"chat"})),  # no ingest scope
     }
     return assemble_engines(
         injection_scanner=injection_scanner,
@@ -154,6 +157,7 @@ def chat_engines(injection_scanner, pii_guardrail, bge_embedder, chunk_tokenizer
         policy=load_policy(Path("config/guardrails.yaml")),
         settings=Settings(_env_file=None),  # type: ignore[call-arg]
         tokens=tokens,
+        chunk_tokenizer=chunk_tokenizer,
     )
 
 

@@ -10,6 +10,7 @@ from sagp.guardrails.policy import load_policy
 from sagp.rag.ingest import ingest_pdf
 from sagp.rag.qdrant_store import QdrantStore
 from sagp.rag.retriever import Retriever
+from sagp.rag.vectorstore import quarantine_name
 
 
 @pytest.fixture(scope="module")
@@ -45,3 +46,12 @@ def test_unrelated_query_is_refused(retriever: Retriever) -> None:
     # no LLM call (C15).
     r = retriever.retrieve("orbital mechanics of binary neutron star mergers")
     assert not r.answerable
+
+
+def test_retriever_refuses_a_quarantine_collection(bge_embedder) -> None:  # type: ignore[no-untyped-def]
+    # A quarantine sibling is never a retrieval source — the Retriever refuses to
+    # be constructed against one (M12), so it cannot be opened even by accident.
+    policy = load_policy(Path("config/guardrails.yaml")).retrieval
+    store = QdrantStore.memory()
+    with pytest.raises(ValueError, match="quarantine"):
+        Retriever(store, bge_embedder, policy, collection=quarantine_name("hb"))

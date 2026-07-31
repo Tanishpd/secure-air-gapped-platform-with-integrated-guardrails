@@ -10,6 +10,7 @@ results from ``.points``. Deletion by document uses a ``query_filter`` on the
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 import numpy as np
 from qdrant_client import QdrantClient, models
@@ -44,7 +45,14 @@ class QdrantStore:
                 vectors_config=models.VectorParams(size=dim, distance=models.Distance.COSINE),
             )
 
-    def upsert(self, name: str, chunks: list[Chunk], vectors: np.ndarray) -> None:
+    def upsert(
+        self,
+        name: str,
+        chunks: list[Chunk],
+        vectors: np.ndarray,
+        *,
+        guards: Sequence[str] | None = None,
+    ) -> None:
         if not chunks:
             return
         points = [
@@ -58,6 +66,7 @@ class QdrantStore:
                     "doc_sha256": c.doc_sha256,
                     "index": c.index,
                     "token_count": c.token_count,
+                    "guard": guards[i] if guards is not None else "clean",
                     "embed_model": BgeEmbedder.MODEL_ID,
                     "embed_revision": self._embed_revision,
                 },
@@ -103,6 +112,10 @@ class QdrantStore:
                 )
             ),
         )
+
+    def collection_exists(self, name: str) -> bool:
+        exists: bool = self._client.collection_exists(name)
+        return exists
 
     def count(self, name: str) -> int:
         return self._client.count(name).count

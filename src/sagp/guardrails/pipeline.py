@@ -24,7 +24,7 @@ from sagp.guardrails.pii import PiiGuardrail
 from sagp.guardrails.placeholders import neutralize_placeholders
 from sagp.guardrails.policy import GuardrailsPolicy
 from sagp.guardrails.vault import PiiVault
-from sagp.types import InjectionVerdict
+from sagp.types import Hit, InjectionVerdict
 
 
 @dataclass(frozen=True)
@@ -73,8 +73,31 @@ class InputGuardrail:
             normalize_flags=tuple(sorted(art.flags)),
         )
 
+    def filter_context(self, hits: list[Hit]) -> tuple[list[Hit], int]:
+        """C19a — drop-and-continue: scan each masked retrieved chunk on the
+        ``retrieval`` surface and keep only the CLEAN ones.
+
+        A single poisoned chunk (indirect injection planted in a document) must
+        not deny service to a legitimate query that also retrieved good chunks —
+        so the flagged chunk is dropped and the rest continue, rather than
+        refusing the whole request. Returns ``(kept, dropped_count)``.
+        """
+        kept = [
+            h
+            for h in hits
+            if self._scanner.scan([h.chunk.text], surface="retrieval").verdict
+            is InjectionVerdict.CLEAN
+        ]
+        return kept, len(hits) - len(kept)
+
     def scan_context(self, assembled: str, *, scanned: list[str]) -> bool:
-        """C19: re-scan the assembled masked context. Returns True if clean."""
+        """C19b: re-scan the fully assembled masked context as one string.
+
+        Runs after ``filter_context`` and the char-budget trim, on the exact bytes
+        that will reach the model — so it catches a split-across-chunks payload
+        that no single chunk tripped, and it is the scan the flagship
+        ``test_final_bytes_were_scanned`` asserts on. Returns True if clean.
+        """
         scanned.append(assembled)
         result = self._scanner.scan([assembled], surface="retrieval")
         return result.verdict is InjectionVerdict.CLEAN

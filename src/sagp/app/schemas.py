@@ -19,3 +19,25 @@ class ChatResponse(BaseModel):
     answer: str
     decision: str  # "answer" | "refuse_insufficient_context" | "refuse_context_flagged" | ...
     citations: list[str] = []
+
+
+class IngestRequest(BaseModel):
+    # A server-local PDF path (air-gapped: documents live on the host, never
+    # uploaded over the wire). Resolved under settings.data_dir by the route.
+    path: str
+    collection: str
+
+
+class IngestResponse(BaseModel):
+    """Operator-facing ingest report (the caller holds the ``ingest`` scope and
+    supplied the document, so counts here are not the chat detector oracle that
+    invariant 8 forbids on the rejection surface)."""
+
+    doc_sha256: str
+    source: str
+    collection: str
+    chunks_indexed: int
+    chunks_suspect: int
+    chunks_quarantined: int
+    pages_quarantined: int
+    pages_total: int

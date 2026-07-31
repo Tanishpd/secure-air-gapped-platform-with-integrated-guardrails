@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from sagp.app.deps import Engines
-from sagp.app.routes import chat, health
+from sagp.app.routes import chat, health, ingest
 from sagp.errors import PromptRejected, SagpError
 from sagp.utils.ids import new_incident_id
 from sagp.utils.timing import constant_time_floor
@@ -35,6 +35,7 @@ def create_app(engines: Engines) -> FastAPI:
     app.state.engines = engines
     app.include_router(health.router)
     app.include_router(chat.router)
+    app.include_router(ingest.router)
 
     @app.middleware("http")
     async def _stamp_start(request: Request, call_next):  # type: ignore[no-untyped-def]
