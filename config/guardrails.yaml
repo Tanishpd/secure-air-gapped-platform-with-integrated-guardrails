@@ -1,0 +1,32 @@
+# config/guardrails.yaml — thresholds and weights as DATA, not code (invariant 12).
+# Canonical schema: GUARDRAILS.md §8.1. The sha256 of this file is written into
+# every audit record so a decision can be replayed against the exact policy that
+# produced it. Edit weights/thresholds HERE, never in Python.
+#
+# M3 subset: normalizer + heuristics + deobfuscation. The injection classifier,
+# PII and retrieval sections land with M4/M5/M9 under the same schema.
+
+version: 1
+
+heuristics:
+  # Weighted rule IDs, OR'd with the classifier (max, never averaged — §3.5).
+  # A rule weighted >= the surface threshold (0.85 on the prompt) can block alone.
+  weights:
+    OVERRIDE_PHRASE: 0.90 # "ignore/forget (all) previous instructions"
+    DISREGARD: 0.90 # "disregard the above", "pay no attention to"
+    SYSTEM_PROMPT_PROBE: 0.85 # "reveal/print your system prompt"
+    ROLE_HIJACK: 0.85 # chat-template injection: <|im_start|>, [INST], ### System
+    DAN_PERSONA: 0.90 # >=0.85 so it blocks alone (classifier is jailbreak-blind)
+    NEW_INSTRUCTIONS: 0.75 # sub-0.85 by design: document-suspect signal, not a solo block
+    EXFIL_INTENT: 0.85 # "send the above to http…", "email … to"
+    MARKDOWN_EXFIL: 0.85 # image/link beacon exfiltration
+  # Block-tier rules: fire -> reject regardless of the numeric threshold.
+  block_rules:
+    - DELIMITER_SPOOF # literal UNTRUSTED_DOCUMENT_ in user input
+    - TAG_CHARS # from the normalizer
+    - BIDI_OVERRIDE # from the normalizer
+
+deobfuscate:
+  codecs: [base64, base32, hex, rot13, leet, reverse, spaced]
+  max_depth: 2
+  max_bytes: 262144

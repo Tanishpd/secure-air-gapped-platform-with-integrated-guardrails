@@ -49,6 +49,7 @@ dev = [
   "pytest-asyncio==1.3.0",
   "ruff==0.15.3",
   "mypy==1.19.1",
+  "types-PyYAML==6.0.12.20260724",
 ]
 # thinc-apple-ops (Accelerate BLAS for spaCy) is an opt-in perf extra; kept out of
 # the default closure so M0 installs from wheels without a source build.
