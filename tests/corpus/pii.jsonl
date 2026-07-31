@@ -1,0 +1,18 @@
+{"id": "P-EMAIL-001", "text": "You can reach me at alice.wong@example.com for follow-up.", "expected_type": "EMAIL_ADDRESS", "notes": "plain email"}
+{"id": "P-EMAIL-002", "text": "Please forward the report to r.kumar@company.co.in before Friday.", "expected_type": "EMAIL_ADDRESS", "notes": "email .co.in"}
+{"id": "P-EMAIL-003", "text": "The old address was bob_smith99@mail-server.net.", "expected_type": "EMAIL_ADDRESS", "notes": "email with underscore/hyphen"}
+{"id": "P-EMAIL-004", "text": "Contact: priya.sharma+hr@subdomain.example.org", "expected_type": "EMAIL_ADDRESS", "notes": "plus-addressing"}
+{"id": "P-EMAIL-005", "text": "Send an invite to team.lead@startup.io and cc me.", "expected_type": "EMAIL_ADDRESS", "notes": "email .io"}
+{"id": "P-CARD-001", "text": "My card number is 4111 1111 1111 1111 expiring next year.", "expected_type": "CREDIT_CARD", "notes": "Visa test, Luhn-valid, spaced"}
+{"id": "P-CARD-002", "text": "Charge it to 5500 0055 5555 5559 please.", "expected_type": "CREDIT_CARD", "notes": "Mastercard test, Luhn-valid"}
+{"id": "P-CARD-003", "text": "The corporate card ending 4012888888881881 was declined.", "expected_type": "CREDIT_CARD", "notes": "Visa test, Luhn-valid, no spaces"}
+{"id": "P-CARD-004", "text": "Amex on file: 3782 822463 10005.", "expected_type": "CREDIT_CARD", "notes": "Amex test, Luhn-valid"}
+{"id": "P-CARD-005", "text": "Use 6011 0009 9013 9424 for the deposit.", "expected_type": "CREDIT_CARD", "notes": "Discover test, Luhn-valid"}
+{"id": "P-AADHAAR-001", "text": "My Aadhaar number is 9999 9999 0019.", "expected_type": "IN_AADHAAR", "notes": "Verhoeff-valid, Presidio-detected 999999990019"}
+{"id": "P-AADHAAR-002", "text": "My Aadhaar number is 4968 5824 5152.", "expected_type": "IN_AADHAAR", "notes": "Verhoeff-valid, Presidio-detected 496858245152"}
+{"id": "P-AADHAAR-003", "text": "My Aadhaar number is 2341 2341 3300.", "expected_type": "IN_AADHAAR", "notes": "Verhoeff-valid, Presidio-detected 234123413300"}
+{"id": "P-PERSON-001", "text": "The claim was filed by John Smith on Tuesday.", "expected_type": "PERSON", "notes": "Western name"}
+{"id": "P-PERSON-002", "text": "Please assign the ticket to Maria Garcia in support.", "expected_type": "PERSON", "notes": "Western name"}
+{"id": "P-PERSON-003", "text": "Rajesh Kumar approved the purchase order yesterday.", "expected_type": "PERSON", "notes": "Indian name (OQ-9 blind spot)"}
+{"id": "P-PERSON-004", "text": "I spoke with Priya Sharma about the onboarding.", "expected_type": "PERSON", "notes": "Indian name (OQ-9 blind spot)"}
+{"id": "P-PERSON-005", "text": "Sarah Johnson will lead the review next week.", "expected_type": "PERSON", "notes": "Western name"}

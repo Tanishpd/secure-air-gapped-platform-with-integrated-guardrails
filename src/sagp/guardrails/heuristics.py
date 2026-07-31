@@ -47,7 +47,7 @@ RULE_PATTERNS: dict[str, re.Pattern[str]] = {
         r"\bnew instructions\b\s*:|\bupdated system message\b|\bthe real task is\b", _I
     ),
     "EXFIL_INTENT": re.compile(
-        r"\b(?:send|post|upload|email|exfiltrate|forward|leak)\b[^.]{0,40}"
+        r"\b(?:send|post|upload|email|exfiltrate|forward|leak|append|attach|add)\b[^.]{0,50}"
         r"(?:https?://|to\s+\S+@)",
         _I,
     ),

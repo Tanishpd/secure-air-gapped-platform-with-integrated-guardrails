@@ -71,6 +71,9 @@ provision:  ## PROVISION EVERYTHING (online, one-way door): steps 01..10 in orde
 verify-manifest:  ## Full manifest verification (recompute every hash + signature)
 	$(PYTHON) -m sagp.netguard.manifest
 
+eval:  ## Corpus metrics -> docs/metrics/latest.json (real models; commit the result)
+	$(PYTHON) scripts/eval_guardrails.py
+
 audit-verify:  ## Walk the audit hash chain; exit 1 on any break
 	$(PYTHON) -m sagp.audit.verify
 
