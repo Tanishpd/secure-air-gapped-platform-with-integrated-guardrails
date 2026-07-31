@@ -92,9 +92,18 @@ class PiiGuardrail:
         return None
 
     def mask(
-        self, text: str, results: list[RecognizerResult], vault: PiiVault, *, origin: str = "prompt"
+        self,
+        text: str,
+        results: list[RecognizerResult],
+        vault: PiiVault,
+        *,
+        origin: str = "prompt",
+        include_block: bool = False,
     ) -> str:
-        mask_results = [r for r in results if r.entity_type in self._entities.mask_names]
+        names = set(self._entities.mask_names)
+        if include_block:  # egress/document surfaces MASK block-tier entities (GUARDRAILS §5.1)
+            names |= set(self._entities.block_names)
+        mask_results = [r for r in results if r.entity_type in names]
         if not mask_results:
             return text
         person_values = [text[r.start : r.end] for r in mask_results if r.entity_type == "PERSON"]
@@ -123,5 +132,17 @@ class PiiGuardrail:
             # Uniform opaque rejection; the type goes to the audit record, not the client.
             raise PromptRejected(f"blocked entity: {blocked}")
         masked = self.mask(text, results, vault, origin="prompt")
+        counts = Counter(r.entity_type for r in results)
+        return PiiResult(masked_text=masked, entity_types=dict(counts))
+
+    def run_egress(self, text: str, vault: PiiVault, *, origin: str = "response") -> PiiResult:
+        """Mask PII leaving the box (retrieved chunks at C17, the LLM reply at C22b).
+
+        Uses egress thresholds and masks block-tier entities too — a card or email
+        the model emits, or a chunk contains, is pseudonymised, never blocked here
+        (blocking retrieval/output would be DoS/data loss; §5.1). No BLOCK-list 400.
+        """
+        results = self.analyze(text, origin=origin)
+        masked = self.mask(text, results, vault, origin=origin, include_block=True)
         counts = Counter(r.entity_type for r in results)
         return PiiResult(masked_text=masked, entity_types=dict(counts))

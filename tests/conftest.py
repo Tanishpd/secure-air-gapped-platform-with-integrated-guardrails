@@ -120,3 +120,47 @@ def sample_pdfs(tmp_path_factory):  # type: ignore[no-untyped-def]
     poisoned = d / "poisoned_appendix.pdf"
     poisoned.write_bytes(mod.poisoned_appendix())
     return {"handbook": handbook, "poisoned": poisoned}
+
+
+@pytest.fixture(scope="module")
+def chat_engines(injection_scanner, pii_guardrail, bge_embedder, chunk_tokenizer, sample_pdfs):  # type: ignore[no-untyped-def]
+    """Full gateway engines: real guardrails, FakeLLM, :memory: store with the handbook."""
+    from sagp.app.deps import assemble_engines
+    from sagp.config import Settings
+    from sagp.guardrails.policy import load_policy
+    from sagp.llm.fake import FakeLLM
+    from sagp.rag.ingest import ingest_pdf
+    from sagp.rag.qdrant_store import QdrantStore
+    from sagp.types import Principal
+
+    store = QdrantStore.memory(embed_revision="test")
+    ingest_pdf(
+        sample_pdfs["handbook"],
+        collection="handbook",
+        store=store,
+        embedder=bge_embedder,
+        chunk_tokenizer=chunk_tokenizer,
+    )
+    tokens = {
+        "tok-chat": Principal(id="u1", scopes=frozenset({"chat", "ingest"})),
+        "tok-reveal": Principal(id="u2", scopes=frozenset({"chat", "ingest", "pii:reveal"})),
+    }
+    return assemble_engines(
+        injection_scanner=injection_scanner,
+        pii=pii_guardrail,
+        embedder=bge_embedder,
+        store=store,
+        llm=FakeLLM("Full-time employees get 20 days of parental leave [S1, p.1]."),
+        policy=load_policy(Path("config/guardrails.yaml")),
+        settings=Settings(_env_file=None),  # type: ignore[call-arg]
+        tokens=tokens,
+    )
+
+
+@pytest.fixture(scope="module")
+def client(chat_engines):  # type: ignore[no-untyped-def]
+    from fastapi.testclient import TestClient
+
+    from sagp.app.main import create_app
+
+    return TestClient(create_app(chat_engines), raise_server_exceptions=False)
