@@ -1,0 +1,6 @@
+# Indian IFSC bank branch code: 4 letters + '0' + 6 alphanumerics (e.g. HDFC0001234).
+recognizers:
+  - entity: IN_IFSC
+    context: [ifsc, branch, bank, neft, rtgs]
+    patterns:
+      - { name: ifsc, regex: '\b[A-Z]{4}0[A-Z0-9]{6}\b', score: 0.85 }

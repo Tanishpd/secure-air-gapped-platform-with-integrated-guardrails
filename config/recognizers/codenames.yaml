@@ -1,0 +1,7 @@
+# Deny-list of internal project codenames to mask. Placeholder values — replace
+# with the real codename list for a deployment (kept out of git if sensitive).
+recognizers:
+  - entity: PROJECT_CODENAME
+    context: [project, codename, initiative, programme]
+    deny_list: [Bluebird, Redwood, Nightfall, Ironclad, Halcyon]
+    score: 0.90

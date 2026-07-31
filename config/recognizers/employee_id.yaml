@@ -1,0 +1,7 @@
+# Internal employee IDs, e.g. EMP-482913. (A real check-digit validator lives in
+# recognizers.py; the pattern gates candidates before that check.)
+recognizers:
+  - entity: EMPLOYEE_ID
+    context: [employee, emp, staff, badge, id]
+    patterns:
+      - { name: emp, regex: '\bEMP-\d{6}\b', score: 0.75 }

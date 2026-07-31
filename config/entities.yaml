@@ -1,0 +1,42 @@
+# config/entities.yaml — entity policy as DATA (invariant 12). Canonical: GUARDRAILS §8.2.
+# BLOCK  -> presence in the user prompt rejects the request (byte-identical 400).
+# MASK   -> replaced with a request-scoped <TYPE_N> vault placeholder.
+# ALLOW  -> detected and audited, never masked.
+# The three tables are exhaustive over WHICH entities are registered; an entity
+# absent from all three is not registered, not detected, not audited.
+# "binary" documents that Presidio's validate_result forces MAX_SCORE or drops —
+# thresholds do not apply to those entities.
+#
+# BLOCK is the PROMPT-surface disposition (C10). On the document (C17) and egress
+# (C22b) surfaces these same entities are MASKed instead (binary for
+# CREDIT_CARD/IN_AADHAAR, egress 0.40 otherwise) — blocking a retrieved chunk or
+# the model's answer would be DoS / data loss (GUARDRAILS §5.1).
+
+version: 1
+
+block:
+  - { name: CREDIT_CARD, ingress: binary, source: presidio } # Luhn via validate_result
+  - { name: IN_AADHAAR, ingress: binary, source: presidio } # Verhoeff via validate_result
+  - { name: US_SSN, ingress: 0.50, source: presidio }
+  - { name: IBAN_CODE, ingress: 0.50, source: presidio }
+  - { name: US_BANK_NUMBER, ingress: 0.50, source: presidio }
+  - { name: CRYPTO, ingress: 0.50, source: presidio }
+  - { name: MEDICAL_LICENSE, ingress: 0.50, source: presidio }
+  - { name: API_KEY, ingress: 0.50, source: custom } # + entropy gate
+  - { name: PRIVATE_KEY, ingress: 0.50, source: custom } # PEM headers
+
+mask:
+  - { name: PERSON, ingress: 0.50, egress: 0.35 } # spaCy NER
+  - { name: EMAIL_ADDRESS, ingress: binary, egress: binary } # SealedEmailRecognizer
+  - { name: PHONE_NUMBER, ingress: 0.50, egress: 0.40 }
+  - { name: LOCATION, ingress: 0.55, egress: 0.40 } # highest ingress: spaCy GPE over-fires
+  - { name: IN_PAN, ingress: 0.50, egress: 0.40, source: presidio }
+  - { name: IN_IFSC, ingress: 0.50, egress: 0.40, source: custom }
+  - { name: EMPLOYEE_ID, ingress: 0.50, egress: 0.40, source: custom }
+  - { name: PROJECT_CODENAME, ingress: 0.50, egress: 0.40, source: custom } # deny-list
+
+allow:
+  - { name: DATE_TIME, ingress: 0.85 } # masking dates destroys most handbook answers
+  - { name: NRP, ingress: 0.85 } # nationality/religion/politics — over-fires
+
+defaults: { ingress: 0.50, egress: 0.35 }
