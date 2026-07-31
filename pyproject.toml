@@ -65,7 +65,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-sagp = ["py.typed"]
+sagp = ["py.typed", "llm/prompts/*.txt"]
 
 [tool.setuptools.dynamic]
 version = { attr = "sagp.version.__version__" }
