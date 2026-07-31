@@ -44,18 +44,24 @@ def run_chat(
             return ChatResponse(answer=engines.refusal_text, decision="refuse_insufficient_context")
 
         masked_hits: list[Hit] = []
-        supplied_pages: set[int] = set()
         for hit in result.hits:  # C16–C17: mask retrieved chunks into the SAME vault
             masked = engines.pii.run_egress(
                 hit.chunk.text, vault, origin=f"doc:{hit.chunk.doc_sha256[:8]}"
             ).masked_text
             masked_hits.append(Hit(chunk=replace(hit.chunk, text=masked), score=hit.score))
-            supplied_pages.add(hit.chunk.page)
 
-        assembled = build_prompt(  # C18
-            inp.masked_question, masked_hits, max_ctx_chars=engines.policy.retrieval.max_ctx_chars
+        kept_hits, _dropped = engines.input_guardrail.filter_context(masked_hits)  # C19a
+        if not kept_hits:  # every retrieved chunk was flagged — nothing safe to ground on
+            return ChatResponse(answer=engines.refusal_text, decision="refuse_context_flagged")
+
+        assembled = build_prompt(  # C18 (from the surviving chunks only)
+            inp.masked_question, kept_hits, max_ctx_chars=engines.policy.retrieval.max_ctx_chars
         )
-        if not engines.input_guardrail.scan_context(assembled.user_payload, scanned=scanned):  # C19
+        # Citations may only reference a page that actually made it into the prompt
+        # after the char-budget trim (C22 range check).
+        supplied_pages = {h.chunk.page for h in assembled.chunks_used}
+        # C19b: re-scan the fully assembled string as one unit.
+        if not engines.input_guardrail.scan_context(assembled.user_payload, scanned=scanned):
             return ChatResponse(answer=engines.refusal_text, decision="refuse_context_flagged")
 
         generation = engines.llm.generate(  # C21 (buffered)

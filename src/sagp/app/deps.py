@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fastapi import Header, Request
+from tokenizers import Tokenizer
 
 from sagp.config import Settings
 from sagp.errors import AuthError
@@ -31,6 +32,7 @@ class Engines:
     input_guardrail: InputGuardrail
     output_guardrail: OutputGuardrail
     pii: PiiGuardrail
+    injection_scanner: InjectionScanner  # exposed for the ingest path's document scan
     store: VectorStore
     embedder: BgeEmbedder
     llm: LLMClient
@@ -39,6 +41,7 @@ class Engines:
     system_prompt: str
     refusal_text: str
     tokens: dict[str, Principal]  # bearer token -> principal
+    chunk_tokenizer: Tokenizer | None = None  # required by the ingest route only
 
 
 def assemble_engines(
@@ -51,11 +54,13 @@ def assemble_engines(
     policy: GuardrailsPolicy,
     settings: Settings,
     tokens: dict[str, Principal],
+    chunk_tokenizer: Tokenizer | None = None,
 ) -> Engines:
     return Engines(
         input_guardrail=InputGuardrail(injection_scanner, pii, policy, settings),
         output_guardrail=OutputGuardrail(pii),
         pii=pii,
+        injection_scanner=injection_scanner,
         store=store,
         embedder=embedder,
         llm=llm,
@@ -64,6 +69,7 @@ def assemble_engines(
         system_prompt=load_prompt(SYSTEM_RAG),
         refusal_text=load_prompt(REFUSAL).strip(),
         tokens=tokens,
+        chunk_tokenizer=chunk_tokenizer,
     )
 
 

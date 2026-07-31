@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from sagp.guardrails.policy import RetrievalPolicy
 from sagp.rag.embeddings import BgeEmbedder
-from sagp.rag.vectorstore import VectorStore
+from sagp.rag.vectorstore import VectorStore, is_quarantine_name
 from sagp.types import Hit
 
 
@@ -35,6 +35,10 @@ class Retriever:
         *,
         collection: str,
     ) -> None:
+        if is_quarantine_name(collection):
+            # A quarantine sibling holds injection-flagged chunks and must never be
+            # a retrieval source (M12). Refuse by construction, not by convention.
+            raise ValueError(f"refusing to retrieve from a quarantine collection: {collection!r}")
         self._store = store
         self._embedder = embedder
         self._policy = policy
