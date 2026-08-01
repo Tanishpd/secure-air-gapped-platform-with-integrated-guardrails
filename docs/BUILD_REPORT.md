@@ -76,14 +76,16 @@ construction.
 | Injection ONNX session RSS | **0.30 GB** | FP32 (INT8 dynamic quant *inverts* this DeBERTa-v3 — OQ-2); ORT mmaps weights |
 | Embedding parity vs sentence-transformers | **1.6e-07** | bge-small ONNX, CLS pooling |
 | Online negative control | **6.58 ms** | live TCP handshake to `1.1.1.1:443` unguarded → `EgressViolation` when enforced |
+| App-process RSS (loaded) | **≈0.7 GB** | `make bench`, single-host/idle; ~0.66–0.81 GB across runs — well under the 1.16 GB projection; excludes macOS + Ollama |
+| Single-request latency | **~4–5 s / ~1 s** | benign chat (Ollama-generation-bound) / injection→400; `make bench`, single-request, varies run-to-run, **not load-tested** |
 | Test suite / smoke | **262 / 14-of-14** | `make test`, `make smoke` |
 
 ### (ESTIMATE) / PROJECTION / OPEN
 
 | Figure | Value | Note |
 |---|---|---|
-| RAM total (embedded / demo profile) | 6.75 / 7.60 GB | **projections**, never benchmarked; each names its profile |
-| All latency figures | — | no timing run on this M2 |
+| RAM total (embedded / demo profile) | 6.75 / 7.60 GB | **projections** (add macOS baseline + Ollama RSS to the measured ≈0.7 GB app process); not benchmarked as a whole |
+| Latency under load / concurrency | — | single-request idle latency is measured (`make bench`); sustained/concurrent load is not |
 | PII recall on Devanagari / transliterated names | — | **OQ-9**, no eval exists |
 | The green air-gap `PASS` | — | requires a real seal + physical disconnect; **never produced** |
 | Docker `PROFILE=demo` isolation | — | spike resolved it: **not** isolatable by compose options (see §5) |

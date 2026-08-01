@@ -34,11 +34,14 @@ below. If you quote this project anywhere, quote these with it.
    Ollama and Docker are separate processes outside both guard layers entirely. (Items 2 and 3.)
 4. **The evidence signature is self-signed**, by a key generated on the very host it attests to, with
    local-clock timestamps. Not attestation, not non-repudiation. (Items 5, 6 and 7.)
-5. **The guardrail metrics are measured; the performance numbers are not.** M6 measured the guardrail
-   corpus (injection headline recall 1.0 and PII recall 1.0 clear their floors; precision 0.854 now meets its
-   target, while benign FPR 0.24 still misses its 0.10 target — the one OPEN gap) and the injection classifier's RSS (0.30 GB, FP32). But **no latency
-   figure and no RAM total** in this repository is a measurement — each is an estimate or a profile-specific
-   projection. (Item 18.)
+5. **The guardrail metrics are measured; performance is measured single-host/idle, never under load.** M6
+   measured the guardrail corpus (injection headline recall 1.0 and PII recall 1.0 clear their floors;
+   precision 0.854 now meets its target, while benign FPR 0.24 still misses its 0.10 target — the one OPEN
+   gap) and the injection classifier's RSS (0.30 GB, FP32). `make bench` adds single-host, warm, idle samples:
+   app-process RSS **≈0.7 GB** (~0.66–0.81 GB across runs, under the 1.16 GB projection) and single-request
+   latency (benign chat ~4–5 s, Ollama-bound; injection→400 ~1 s). But **no RAM total is measured** (the 6.75/7.60 GB profile totals add the
+   macOS baseline + the sibling Ollama process to the measured app RSS) and **nothing is measured under
+   concurrency or sustained load** — `make bench` is one idle sample, not an SLA. (Item 18.)
 
 ---
 
@@ -216,10 +219,14 @@ with backpressure, and a hard cgroup/`ulimit` boundary around each component.
 numbers are now measured: the injection classifier's session RSS is **0.30 GB** (measured; **FP32** —
 INT8 dynamic quant inverts this DeBERTa-v3, **OQ-1** and **OQ-2** resolved), the embedding parity gate
 passed at **1.6e-07**, and the M6 guardrail metrics are real (recall and PII floors met; precision 0.854
-now meets its target, while benign FPR 0.24 stays below its 0.10 target — the one OPEN gap). But **every latency figure remains an ESTIMATE**, and
-every derived RAM total remains a **PROJECTION** that depends on which profile you assume — **6.75 GB for
-the embedded profile, 7.60 GB under `PROFILE=demo`** — so a RAM figure quoted without naming its profile
-is meaningless. And a measured floor is still not safety: the corpus and the defence share an author
+now meets its target, while benign FPR 0.24 stays below its 0.10 target — the one OPEN gap). `make bench`
+adds single-host, warm, **idle** samples — app-process RSS **≈0.7 GB** (~0.66–0.81 GB across runs) and
+single-request latency (benign chat ~4–5 s, injection→400 ~1 s). But those are idle samples that vary
+run-to-run, **not** a load benchmark: latency **under
+concurrency or sustained load is unmeasured**, and every derived RAM *total* remains a **PROJECTION** that
+depends on which profile you assume — **6.75 GB for the embedded profile, 7.60 GB under `PROFILE=demo`**
+(both add the macOS baseline + the sibling Ollama RSS to the measured app process) — so a RAM figure quoted
+without naming its profile is meaningless. And a measured floor is still not safety: the corpus and the defence share an author
 ([EVALUATION.md](EVALUATION.md) §10), so a cleared floor is a regression signal, not a security result.
 The structural conclusions — guardrail overhead is a small fraction of generation time, and the injection
 classifier dominates the guardrail budget — are robust to a 2–3× error. The absolute latency/RAM numbers

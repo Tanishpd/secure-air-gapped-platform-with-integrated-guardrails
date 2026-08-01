@@ -114,6 +114,9 @@ airgap-status:  ## Print phase, seal_generation, unseal count
 spike-docker:  ## Online, Docker running: resolve OQ-4/OQ-5 empirically -> ADR-0002
 	bash scripts/spike_docker.sh
 
+bench:  ## Measure app-process RSS + per-request latency (single-host, idle; not a load test)
+	$(PYTHON) scripts/bench.py
+
 seal-pf:  ## OPTIONAL, sudo, HOST-WIDE: pf blocks all non-loopback egress (dry-run parsed first)
 	bash scripts/seal_pf.sh
 
