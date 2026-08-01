@@ -39,11 +39,18 @@ def test_qdrant_path_derives_under_spaced_data_dir() -> None:
     assert s.qdrant_path.parent.name == "data"
 
 
-def test_repo_root_with_spaces_is_usable() -> None:
-    # This test file lives under the real spaced repo path; resolving and
-    # re-joining it must not lose the space.
-    here = Path(__file__).resolve()
-    assert " " in str(here)  # the repo path has spaces
+def test_real_spaced_path_resolves_and_round_trips(tmp_path: Path) -> None:
+    # Locally the repo itself lives under a spaced directory; in CI the checkout
+    # path has none. Rather than assert on the ambient path (environment-coupled),
+    # materialise a real spaced directory and pin the property everywhere: a real
+    # on-disk path with spaces resolves, re-joins, and exists without splitting.
+    spaced_dir = tmp_path / "Secure Air-Gapped Platform"
+    spaced_dir.mkdir()
+    f = spaced_dir / "employee handbook.pdf"
+    f.write_bytes(b"%PDF-1.4\n")
+    here = f.resolve()
+    assert " " in str(here)
     rejoined = Path(str(here))
     assert rejoined == here
     assert rejoined.exists()
+    assert rejoined.name == "employee handbook.pdf"  # a single token, not split

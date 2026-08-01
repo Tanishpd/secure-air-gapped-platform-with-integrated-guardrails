@@ -14,7 +14,7 @@ RUFF    := "$(VENV)/bin/ruff"
 MYPY    := "$(VENV)/bin/mypy"
 PYTEST  := "$(VENV)/bin/pytest"
 
-.PHONY: help doctor venvs install install-provision lint format typecheck test clean \
+.PHONY: help doctor venvs install install-provision lint format typecheck test test-ci clean \
         provision verify-manifest audit-verify eval samples \
         verify verify-online evidence proof smoke \
         seal unseal serve airgap-status spike-docker seal-pf unseal-pf \
@@ -56,6 +56,9 @@ typecheck:  ## mypy (strict) over src/sagp
 
 test:  ## Unit + integration suites (FakeLLM/FakeScorer, no models)
 	$(PYTEST) -q
+
+test-ci:  ## The model-free subset CI runs (no provisioned models / Ollama). Marker-selected.
+	$(PYTEST) -m "not needs_models and not needs_ollama" -q
 
 provision:  ## PROVISION EVERYTHING (online, one-way door): steps 01..10 in order
 	@$(PYTHON) -m sagp.netguard.phase to-provision

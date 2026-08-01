@@ -1,5 +1,12 @@
 # Secure Air-Gapped Platform with Integrated Guardrails (`sagp`)
 
+[![ci](https://github.com/Tanishpd/secure-air-gapped-platform-with-integrated-guardrails/actions/workflows/ci.yml/badge.svg)](https://github.com/Tanishpd/secure-air-gapped-platform-with-integrated-guardrails/actions/workflows/ci.yml)
+
+CI runs lint + strict typecheck + the model-free test subset on every push (`ubuntu-latest`, Python
+3.11). It deliberately does **not** exercise the provisioned models, Ollama, or the air-gap proof —
+those need a sealed host and run locally (`make test-all`, `make proof`); a green badge means the code
+compiles, types, and passes its logic tests, nothing more.
+
 A reference blueprint for running a local LLM inside a network-isolated enclave, with automated PII
 de-identification before anything reaches the model and prompt-injection blocking before anything
 reaches the retriever. It is a *template* to copy, not a product — and before you read anything else,

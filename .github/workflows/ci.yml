@@ -1,0 +1,51 @@
+name: ci
+
+# Fast, model-free gate on every push and PR. The provisioned artifacts
+# (ONNX sessions, the spaCy pipeline) and a live Ollama are NOT available in CI —
+# tests that need them are marked `needs_models` / `needs_ollama` (auto-applied in
+# tests/conftest.py from each test's fixtures) and deselected here. The full suite
+# (`make test-all` / `make test-e2e`) runs locally on a provisioned host.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A newer push to the same ref cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-type-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # requires-python is >=3.11,<3.12; pin the minor, take the latest patch.
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install (editable + dev tools)
+        # NOT the hash-pinned runtime lock: that pins macOS/arm wheels whose hashes
+        # would not match the Linux wheels resolved here. CI resolves fresh.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+
+      # One source of truth: the same Makefile targets developers run, with the
+      # tool paths pointed at the CI environment instead of ./.venv.
+      - name: Lint (ruff check + format)
+        run: make lint RUFF=ruff
+
+      - name: Typecheck (mypy --strict)
+        run: make typecheck MYPY=mypy
+
+      - name: Test (model-free subset)
+        run: make test-ci PYTEST=pytest
