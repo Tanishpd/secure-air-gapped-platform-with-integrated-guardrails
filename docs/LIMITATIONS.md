@@ -137,15 +137,19 @@ self-authored corpus is a regression signal, not a guarantee ([EVALUATION.md](EV
 **To close it:** Nothing closes it. Reduce it with a maintained classifier, ensembling, per-technique
 recall reporting (jailbreak and indirect families reported separately, never averaged), and continuous
 red-teaming against the deployed corpus.
-**Swapping the classifier is now a gated, evidence-based operation, not a leap of faith.** The bake-off
-harness (`scripts/eval_classifier_candidate.py`, `make eval-candidate`) scores any candidate through the
-*real* decision path over the same corpus, and the swap-gate (`candidate_gate.py`, invariant 12) is
-**hard on recall regression** — a replacement that lowers attack recall on any family is rejected
-regardless of any FPR gain. Validated on the v1 ancestor (`deepset/deberta-v3-base-injection`), which
-holds recall but nearly doubles benign FPR (0.24 → 0.44) → correctly `NO_IMPROVEMENT`. The classifier
-best positioned to close the ceiling — **Llama Prompt Guard 2** (multilingual, lower-FPR, maintained) —
-is `gated=manual` on Hugging Face: it needs an accepted Meta licence + an HF token this host does not
-have, at which point it drops straight into the gate. See [docs/metrics/candidates/](metrics/candidates/).
+**Swapping the classifier is now a gated, evidence-based operation, not a leap of faith — and the field
+has been swept.** The bake-off harness (`scripts/eval_classifier_candidate.py`, `make eval-candidate`)
+scores any candidate through the *real* decision path over the same corpus, and the swap-gate
+(`candidate_gate.py`, invariant 12) is **hard on recall regression**. **8 candidates were evaluated
+(29M–279M, including both Llama Prompt Guard 2 variants via an ungated ONNX re-host): none closes the
+FPR gap without regressing recall.** Every model that lowers FPR collapses family F (indirect,
+document-planted injection) to 0.25–0.75; the baseline is the *only* one that holds F at 1.0. Prompt
+Guard 2 is the sharpest case — best FPR (0.04) and precision (0.97) of anything tested, but F drops to
+0.25 (Meta deliberately tuned PG2 to ignore instruction-like text in third-party content). So the FPR
+gap is a genuine recall/FPR **frontier**, not a missing model: closing it while holding recall needs an
+**ensemble** (baseline for recall + a low-FPR corroborator that may never veto a detection) or a
+**fine-tune** on the deployed corpus — real engineering, not a swap. Full record:
+[docs/metrics/candidates/](metrics/candidates/).
 
 ### 10. Presidio recall is not 100%
 

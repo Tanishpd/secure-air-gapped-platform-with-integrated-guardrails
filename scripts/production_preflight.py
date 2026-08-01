@@ -75,7 +75,7 @@ def _automated() -> list[str]:
                 "GREEN" if fpr_ok else "GAP",
                 "benign FPR ceiling",
                 f"{inj['benign_fpr']} <= {floors['benign_fpr_ceiling']}  "
-                f"(tracked known-gap; only closer is a better classifier — H5)",
+                f"(tracked known-gap; closer is an ensemble/fine-tune, not a swap — H5)",
             )
         )
         pii = m["pii_recall"]["per_type"]
@@ -157,7 +157,7 @@ def _human_gates() -> None:
     _line("HUMAN", "H2 host egress lockdown", "make seal-pf (sudo pf) — covers native code")
     _line("HUMAN", "H3 key custody", "self-signed Ed25519 → HSM/KMS; ledger head off-box")
     _line("HUMAN", "H4 third-party audit", "independent review; a self-audit isn't a pass")
-    _line("HUMAN", "H5 close the FPR ceiling", "HF token + Meta licence → eval Prompt-Guard-2")
+    _line("HUMAN", "H5 close the FPR ceiling", "ensemble/fine-tune — swept incl. PG2, none works")
     _line("HUMAN", "H6 real target + soak", "deployment host + a sustained soak (not a burst)")
     _line("HUMAN", "H7 host hardening", "FileVault on; ulimit -c 0 (core dump leaks vault)")
 

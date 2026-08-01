@@ -44,10 +44,14 @@ the physical seal + disconnect.
 | Online negative control | GREEN | `verify-online-<gen>.json` blocked every probe |
 
 The FPR gap is the one measured miss. It is **not** a hard-gate failure (recall and PII
-are the hard gates; precision/FPR are regression-gated targets). The ungated classifier
-landscape was swept — [docs/metrics/candidates/](metrics/candidates/) — and every ungated
-model that lowers FPR does so by dropping attack recall, so the gap is genuinely a
-"needs a stronger model" (**H5**), not a tuning task.
+are the hard gates; precision/FPR are regression-gated targets). The **entire** classifier
+field was swept — 8 candidates, 29M–279M, **including Llama Prompt Guard 2** via an ungated
+ONNX re-host ([docs/metrics/candidates/](metrics/candidates/)) — and **every one that
+lowers FPR does so by dropping attack recall**, collapsing family F (indirect injection) to
+0.25–0.75. The baseline is the only model that holds F at 1.0. So the gap is a genuine
+recall/FPR **frontier**, not a missing model: closing it needs an ensemble or a fine-tune
+(**H5**), not a swap. This also settles the earlier "get an HF token for PG2" ask — PG2
+was measured and it fails the same gate, so the Meta licence + PII form is not worth it.
 
 ## 2. Run — existing gates to execute
 
@@ -74,15 +78,13 @@ None of these can be automated from inside the repo. Each names its owner-action
 | **H2** | Host egress lockdown | `make seal-pf` (sudo, host-wide pf) | root, host-wide; covers native code (grpcio C core, ORT, ctypes) the Python guard can't |
 | **H3** | Key custody | replace the self-signed Ed25519 key with an HSM/KMS; export the ledger head off-box | self-signed is tamper-*evident*, not provenance; real custody is hardware/external |
 | **H4** | Third-party audit | commission an independent security review | a self-audit is a starting point, never a pass |
-| **H5** | Close the FPR ceiling | provide an HF token with the Meta licence accepted, then `make eval-candidate CANDIDATE=meta-llama/Llama-Prompt-Guard-2-86M NAME=prompt-guard-2` | PG2 is `gated=manual`; it cannot be fetched without your credentials (confirmed `GatedRepoError: 401`) |
+| **H5** | Close the FPR ceiling | build an **ensemble** (baseline for recall + a low-FPR corroborator) or **fine-tune** on the deployed corpus | **not a swap** — the whole model field was swept, incl. Prompt Guard 2 (see below); no off-the-shelf model closes it without regressing recall |
 | **H6** | Real target + soak | choose a deployment host and run a sustained load/soak (not a burst) | needs a real environment and time; current numbers are single-host bursts |
 | **H7** | Host hardening | FileVault on; `ulimit -c 0` | operator host configuration; the request-scoped vault survives a core dump otherwise |
 
 ## 4. What would let me close more
 
-Two of the above are one input away from me acting:
-
-- **H5** — give me an HF token whose account has accepted the Meta Prompt Guard 2 licence, and I'll run PG2 through the bake-off gate immediately and report whether it closes the FPR ceiling without regressing recall.
+- **H5 is now answered, not blocked.** The full field (incl. Prompt Guard 2, via an ungated re-host) was evaluated; none closes the FPR gap without regressing recall. The remaining work is an ensemble or a fine-tune — real engineering I can *start* against the current corpus, but which only pays off measured against a real deployment corpus (**H6**). No HF token needed.
 - **H6** (partial) — name a deployment target (host/OS/expected load) and I'll write the deployment-specific config, a soak harness, and the tuned budget for it.
 
 The rest — the physical seal, host-wide pf, an HSM, an external audit — are yours or a third party's to perform. The code is ready to be taken through them; it cannot take itself.
