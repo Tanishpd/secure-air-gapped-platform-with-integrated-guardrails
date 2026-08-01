@@ -155,10 +155,13 @@ implementation. The build order and the definition of each milestone live in
 | [x] | **M12** *(done)* | Indirect-injection layer: ingest-time per-chunk document scan (clean/suspect/quarantine), never-retrieved `__quarantine` sibling collection, C19 assembled-context drop-and-continue, guarded `POST /v1/ingest` | no |
 | [x] | **M13** *(harness done)* | **THE DEMONSTRATION** — `verify_airgap.py` (9 offline assertions + invariant-13 verdict), `verify_online.py` (paired negative control), signed evidence report + hash-chained ledger, 14-check `smoke.sh`. All 9 assertions PASS; the verdict is `INVALID` until an actual seal + disconnect (by design) | **offline — the deliverable** |
 | [x] | **M14** *(hardening + deployment done)* | Audit sink in the chat path (hash-chained `AuditEvent`, types/counts only), `incident_id`-linked quarantine, `GET /v1/admin/incident/{id}` (`pii:reveal`), rate limiting → 429; **plus the deployment/launch subsystem**: `make seal`/`unseal` one-way door (gated), projected-RSS boot refusal, `bin/sagp-serve` + four-gate lifespan, `GET /airgap/status`, `docker-compose.yml` (demo), and `make seal-pf` (pf anchor `deploy/pf/com.sagp`, syntax-validated, operator-loaded). Operator surface complete: `make ingest`/`query` CLIs (validated end-to-end), `up`/`ollama-up`, `/readyz` measured RSS, `GET /v1/admin/quarantine/{collection}`. `make smoke` 14/14. **Left:** only the human-only physical seal + disconnect + `make proof` | no |
-| [ ] | M15 | Documentation revisited against measurements | no |
+| [x] | **M15** *(done)* | Documentation swept correct-as-measured — status banners flipped, measured figures landed, deviations reconciled, every honest limit preserved | no |
+| [x] | *post-M15* | Docker spike (OQ-4/OQ-5 → ADR-0002 Accepted), the `com.sagp` pf anchor, and the operator surface (`ingest`/`query` CLIs, `up`/`ollama-up`, quarantine-review route, `/readyz` RSS) | mixed |
 
 Minimum viable slice is **M-DOCS → M0 → M10**, with M1 done first while online. Realistic effort for
-the whole ledger is **3–6 focused weeks** (ESTIMATE), not one session.
+the whole ledger is **3–6 focused weeks** (ESTIMATE), not one session. A one-page at-a-glance summary of
+the finished build — what shipped, what was measured vs estimated, and the one human step left — is in
+[docs/BUILD_REPORT.md](docs/BUILD_REPORT.md).
 
 ---
 
