@@ -15,7 +15,8 @@ MYPY    := "$(VENV)/bin/mypy"
 PYTEST  := "$(VENV)/bin/pytest"
 
 .PHONY: help doctor venvs install install-provision lint format typecheck test clean \
-        provision verify-manifest audit-verify eval samples
+        provision verify-manifest audit-verify eval samples \
+        verify verify-online evidence proof smoke
 
 help:  ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -79,6 +80,22 @@ eval:  ## Corpus metrics -> docs/metrics/latest.json (real models; commit the re
 
 audit-verify:  ## Walk the audit hash chain; exit 1 on any break
 	$(PYTHON) -m sagp.audit.verify
+
+verify:  ## OFFLINE proof: the 9 air-gap assertions + invariant-13 verdict
+	$(PYTHON) scripts/verify_airgap.py
+
+verify-online:  ## NEGATIVE CONTROL (run during PROVISION, internet UP): audit vs enforce
+	$(PYTHON) scripts/verify_online.py
+
+evidence:  ## Sign the EVIDENCE-<gen>-<utc> report + append the hash-chained ledger
+	$(PYTHON) scripts/evidence.py
+
+proof:  ## verify + evidence
+	$(MAKE) verify
+	$(MAKE) evidence
+
+smoke:  ## 14 numbered functional checks (guard armed, FakeLLM)
+	bash scripts/smoke.sh
 
 clean:  ## Remove venvs and caches
 	rm -rf "$(VENV)" "$(VENV_PROVISION)" .pytest_cache .ruff_cache .mypy_cache
