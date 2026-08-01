@@ -119,3 +119,27 @@ class QdrantStore:
 
     def count(self, name: str) -> int:
         return self._client.count(name).count
+
+    def list_chunks(self, name: str, *, limit: int = 100) -> list[Chunk]:
+        """Scroll a collection's payloads (no vector search) — for the admin
+        quarantine-review path. Never called on a retrievable collection at request
+        time; it reads raw chunk text and is gated on ``pii:reveal`` upstream."""
+        if not self._client.collection_exists(name):
+            return []
+        points, _next = self._client.scroll(
+            name, limit=limit, with_payload=True, with_vectors=False
+        )
+        chunks: list[Chunk] = []
+        for p in points:
+            pl = p.payload or {}
+            chunks.append(
+                Chunk(
+                    doc_sha256=str(pl.get("doc_sha256", "")),
+                    index=int(pl.get("index", 0)),
+                    text=str(pl.get("text", "")),
+                    page=int(pl.get("page", 0)),
+                    source=str(pl.get("source", "")),
+                    token_count=int(pl.get("token_count", 0)),
+                )
+            )
+        return chunks
