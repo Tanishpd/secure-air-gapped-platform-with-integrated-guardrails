@@ -24,8 +24,12 @@ class SagpError(Exception):
     status_code: int = 500
     code: str = "INTERNAL"
 
-    def __init__(self, message: str | None = None) -> None:
+    def __init__(self, message: str | None = None, *, incident_id: str | None = None) -> None:
         super().__init__(message or self.code)
+        # Set when the route has already minted the id (quarantined the raw text and
+        # written the audit record under it), so the HTTP handler reuses the SAME id
+        # in the response instead of minting a fresh, unlinked one.
+        self.incident_id = incident_id
 
 
 class PromptRejected(SagpError):

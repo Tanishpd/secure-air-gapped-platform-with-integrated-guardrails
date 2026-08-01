@@ -155,8 +155,10 @@ except Exception as e:
 client = fake = None
 if scanner and embedder and pii and store:
     try:
+        import tempfile
         from sagp.app.deps import assemble_engines
         from sagp.app.main import create_app
+        from sagp.audit.sink import AuditSink
         from sagp.config import Settings
         from sagp.guardrails.policy import load_policy
         from sagp.llm.fake import FakeLLM
@@ -165,6 +167,8 @@ if scanner and embedder and pii and store:
         from sagp.types import Principal
         from fastapi.testclient import TestClient
 
+        smoke_root = Path(tempfile.mkdtemp())
+        audit_sink = AuditSink(smoke_root / "audit" / "audit.jsonl")
         tok = build_chunk_tokenizer(ROOT / "models/hf/bge-small-en-v1.5/tokenizer.json")
         r9 = ingest_pdf(ROOT / "data/samples/employee_handbook.pdf", collection="handbook",
                         store=store, embedder=embedder, chunk_tokenizer=tok,
@@ -184,6 +188,7 @@ if scanner and embedder and pii and store:
             injection_scanner=scanner, pii=pii, embedder=embedder, store=store, llm=fake,
             policy=load_policy(ROOT / "config/guardrails.yaml"),
             settings=Settings(_env_file=None), chunk_tokenizer=tok,
+            audit=audit_sink, root=smoke_root,
             tokens={"t": Principal(id="u", scopes=frozenset({"chat", "ingest"}))})
         client = TestClient(create_app(engines), raise_server_exceptions=False)
         H = {"Authorization": "Bearer t"}
@@ -221,15 +226,15 @@ else:
 # ---- 14: audit chain verifies; no PII marker in the bytes ----
 try:
     from sagp.audit.verify import verify_chain
-    logs = sorted((ROOT / "audit").glob("*.jsonl"))
-    if not logs:
-        line(14, "SKIP", "audit chain", "no audit log yet (chat audit sink lands in M14)")
+    sink_path = audit_sink.path if client is not None else None
+    if sink_path is None or not sink_path.exists():
+        line(14, "SKIP", "audit chain", "request path skipped (models not provisioned)")
     else:
-        all_ok = all(verify_chain(p).ok for p in logs)
-        raw = b"".join(p.read_bytes() for p in logs)
-        no_pii = b"@example.com" not in raw and b"4111" not in raw
-        line(14, "PASS" if all_ok and no_pii else "FAIL", "audit chain",
-             f"chains_ok={all_ok} no_pii={no_pii}")
+        chain_ok = verify_chain(sink_path).ok
+        raw = sink_path.read_bytes()
+        no_pii = b"@example.com" not in raw and b"hr-lead" not in raw and b"system prompt" not in raw
+        line(14, "PASS" if chain_ok and no_pii and raw else "FAIL", "audit chain",
+             f"chain_ok={chain_ok} no_pii={no_pii} records={raw.count(chr(10).encode())}")
 except Exception as e:
     line(14, "FAIL", "audit chain", repr(e))
 

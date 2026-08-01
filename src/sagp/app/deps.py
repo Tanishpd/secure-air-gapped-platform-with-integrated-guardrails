@@ -9,11 +9,15 @@ scope (invariant 8).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from fastapi import Header, Request
 from tokenizers import Tokenizer
 
+from sagp.app.ratelimit import RateLimiter
+from sagp.audit.sink import AuditSink
 from sagp.config import Settings
 from sagp.errors import AuthError
 from sagp.guardrails.injection.scanner import InjectionScanner
@@ -21,10 +25,22 @@ from sagp.guardrails.output import OutputGuardrail
 from sagp.guardrails.pii import PiiGuardrail
 from sagp.guardrails.pipeline import InputGuardrail
 from sagp.guardrails.policy import GuardrailsPolicy
-from sagp.llm.base import REFUSAL, SYSTEM_RAG, LLMClient, load_prompt
+from sagp.llm.base import REFUSAL, SYSTEM_RAG, LLMClient, load_prompt, prompt_sha256
 from sagp.rag.embeddings import BgeEmbedder
 from sagp.rag.vectorstore import VectorStore
 from sagp.types import Principal
+
+
+@dataclass(frozen=True)
+class Provenance:
+    """The exact policy/model that produced a decision — written into every audit
+    record so a decision replays against the config that made it (invariant 12)."""
+
+    guardrails_sha256: str
+    entities_sha256: str | None
+    system_prompt_sha256: str
+    manifest_root_hash: str | None
+    model: str
 
 
 @dataclass
@@ -41,7 +57,28 @@ class Engines:
     system_prompt: str
     refusal_text: str
     tokens: dict[str, Principal]  # bearer token -> principal
+    provenance: Provenance
     chunk_tokenizer: Tokenizer | None = None  # required by the ingest route only
+    audit: AuditSink | None = None  # None in unit tests that don't assert on audit
+    rate_limiter: RateLimiter | None = None
+    root: Path = field(default_factory=Path.cwd)  # for the quarantine store
+
+
+def _sha256_file(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _manifest_root_hash(root: Path) -> str | None:
+    import json
+
+    path = root / "models" / "MANIFEST.json"
+    try:
+        return str(json.loads(path.read_text())["root_hash"])
+    except (OSError, KeyError, ValueError):
+        return None
 
 
 def assemble_engines(
@@ -55,7 +92,17 @@ def assemble_engines(
     settings: Settings,
     tokens: dict[str, Principal],
     chunk_tokenizer: Tokenizer | None = None,
+    audit: AuditSink | None = None,
+    root: Path | None = None,
 ) -> Engines:
+    root = root or Path.cwd()
+    provenance = Provenance(
+        guardrails_sha256=policy.sha256,
+        entities_sha256=_sha256_file(settings.config_dir / "entities.yaml"),
+        system_prompt_sha256=prompt_sha256(SYSTEM_RAG),
+        manifest_root_hash=_manifest_root_hash(root),
+        model=settings.llm_model,
+    )
     return Engines(
         input_guardrail=InputGuardrail(injection_scanner, pii, policy, settings),
         output_guardrail=OutputGuardrail(pii),
@@ -69,7 +116,11 @@ def assemble_engines(
         system_prompt=load_prompt(SYSTEM_RAG),
         refusal_text=load_prompt(REFUSAL).strip(),
         tokens=tokens,
+        provenance=provenance,
         chunk_tokenizer=chunk_tokenizer,
+        audit=audit,
+        rate_limiter=RateLimiter(settings.rate_limit_per_min),
+        root=root,
     )
 
 

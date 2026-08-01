@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     max_windows: int = Field(16, gt=0)
     max_ctx_chars: int = Field(7000, gt=0)
     max_vault_entries: int = Field(2000, gt=0)
+    # Per-principal fixed-window rate limit (C0). Over the limit -> 429 RateLimited.
+    rate_limit_per_min: int = Field(60, gt=0)
 
     # --- timeouts (BLUEPRINT §12) ------------------------------------------
     timeout_injection_ms: int = Field(2000, gt=0)
