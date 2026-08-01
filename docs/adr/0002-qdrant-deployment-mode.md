@@ -85,7 +85,7 @@ make up                      # PROFILE=demo: docker load + compose up qdrant (no
 
 Gates: `make smoke` check `[ 7/14]` is implemented and passes — it requires the store to initialise in the configured mode (embedded, on this host). `make spike-docker` has run and recorded its result above.
 
-Because the spike showed the Docker path is **not** self-isolating (OQ-4/OQ-5), a `PROFILE=proof` verdict about container egress cannot rest on `.Internal == true` — that config is unreachable by the host app. Any `PROFILE=proof` egress claim must instead be carried by the host `pf` anchor (`make seal-pf`, deferred) covering the container's traffic, and any high-severity gap left `OPEN` must yield `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS`, never `PASS`. The DNS-resolution leak via the embedded resolver is a residual even then.
+Because the spike showed the Docker path is **not** self-isolating (OQ-4/OQ-5), a `PROFILE=proof` verdict about container egress cannot rest on `.Internal == true` — that config is unreachable by the host app. Any `PROFILE=proof` egress claim must instead be carried by the host `pf` anchor (`make seal-pf`, now built — `deploy/pf/com.sagp`, syntax-validated; operator-loaded, and note it does not cover Docker's own root-owned VM interface) covering the container's traffic, and any high-severity gap left `OPEN` must yield `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS`, never `PASS`. The DNS-resolution leak via the embedded resolver is a residual even then.
 
 ---
 
