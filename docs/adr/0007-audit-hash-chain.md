@@ -2,8 +2,8 @@
 
 Records the audit log's integrity design, the keyed-HMAC tokenisation that lets an auditor correlate identities without storing them, and the exact claim this construction does and does not support.
 
-- **Status:** Accepted
-- **Date:** 2026-07-27
+- **Status:** Accepted — implemented (M2 audit spine, wired into the chat path at M14)
+- **Date:** 2026-07-27 (decision); 2026-08-01 (implemented)
 - **Deciders:** Project architect
 - **Supersedes:** —
 
@@ -57,8 +57,8 @@ Offending text goes to `audit/quarantine.py`, referenced by `incident_id` only. 
 
 ### Positive
 - Any deletion, reordering or in-place edit of records after the last exported head is designed to be detectable, and `first_bad_seq` is designed to say where.
-- The log is intended to be safe to hand to an auditor: it carries hashes, counts and keyed tokens only, and `tests/unit/test_audit_no_pii.py` is specified to read the JSONL **bytes** and check exactly that (it has not been written or run). Correlation across incidents is possible for a key holder and not otherwise.
-- Fail-closed: a write or scrub failure is specified to return 503 with the response not delivered. There is no "logged best-effort" path.
+- The log is intended to be safe to hand to an auditor: it carries hashes, counts and keyed tokens only, and `tests/unit/test_audit_no_pii.py` reads the JSONL **bytes** and checks exactly that. Correlation across incidents is possible for a key holder and not otherwise.
+- Fail-closed: a write or scrub failure returns 503 with the response not delivered. There is no "logged best-effort" path.
 
 ### Negative
 - **The head-digest export is a manual operational step.** If it is skipped, the chain's evidential value reduces to "internally consistent", which an attacker with write access can manufacture.
@@ -81,7 +81,7 @@ make audit-verify        # scripts/verify_audit.py -> audit.verify.verify_chain;
 [ "$(stat -f '%Lp' audit)" = "700" ] && [ "$(stat -f '%Lp' audit/events-*.jsonl)" = "600" ]
 ```
 
-Gates (specifications — no make target or test exists yet): `make smoke` check `[14/14]` is specified to verify the chain and grep the JSONL bytes for PII markers, with the smoke summary line printing the **ledger head**. A broken ledger chain is an **invalidating condition** for `make verify` — the verdict becomes `INVALID`, never `PASS`; `CLAUDE.md` invariant 13 (never mark a verification PASS when a negative control failed or a high-severity gap is open) governs that verdict. Separately, `CLAUDE.md`'s three-edits rule requires that adding any guardrail signal lands three edits in one commit: the `AuditEvent` field, a `docs/COMPLIANCE.md` row, and a `test_audit_no_pii.py` case.
+Gates (implemented; `make smoke` reports 14/14): `make smoke` check `[14/14]` verifies the chain and greps the JSONL bytes for PII markers, with the smoke summary line printing the **ledger head**. A broken ledger chain is an **invalidating condition** for `make verify` — the verdict becomes `INVALID`, never `PASS`; `CLAUDE.md` invariant 13 (never mark a verification PASS when a negative control failed or a high-severity gap is open) governs that verdict, one of the four values (`PASS`, `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS`, `INVALID`, `FAIL`) `netguard.evidence.compute_verdict` returns. Separately, `CLAUDE.md`'s three-edits rule requires that adding any guardrail signal lands three edits in one commit: the `AuditEvent` field, a `docs/COMPLIANCE.md` row, and a `test_audit_no_pii.py` case.
 
 ---
 

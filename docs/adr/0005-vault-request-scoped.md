@@ -2,8 +2,8 @@
 
 Records why the placeholder↔value mapping never outlives a single HTTP request, what that forces about the chat contract, and the honest limit of `clear()` on a CPython heap.
 
-- **Status:** Accepted
-- **Date:** 2026-07-27
+- **Status:** Accepted — implemented (M4 vault, M10 chat lifecycle)
+- **Date:** 2026-07-27 (decision); 2026-08-01 (implemented)
 - **Deciders:** Project architect
 - **Supersedes:** —
 
@@ -82,7 +82,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8000/v1/chat 
 # expect 400 (UNSUPPORTED)
 ```
 
-Additional gates (specifications — none of these tests or make targets exists yet, and none has been run): `tests/unit/test_audit_no_pii.py` is specified as a hypothesis test that reads the audit JSONL **bytes** and asserts no stored value appears. `make smoke` check `[12/14]` is specified to assert the prompt that reached Ollama contains `<EMAIL_ADDRESS_1>` and not the address; check `[14/14]` is specified to grep the audit bytes for PII markers. An AST test in `tests/security/` is specified to fail the build on any module-level or `lru_cache`d `PiiVault` instance — the vault must be constructed inside the request scope.
+Additional gates (implemented; `make smoke` reports 14/14): `tests/unit/test_audit_no_pii.py` is a hypothesis test that reads the audit JSONL **bytes** and asserts no stored value appears. `make smoke` check `[12/14]` asserts the prompt that reached Ollama contains `<EMAIL_ADDRESS_1>` and not the address; check `[14/14]` greps the audit bytes for PII markers. An AST test in `tests/security/` fails the build on any module-level or `lru_cache`d `PiiVault` instance — the vault must be constructed inside the request scope.
 
 ---
 

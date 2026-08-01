@@ -5,10 +5,14 @@ running it, re-provisioning it, and responding when something breaks. Every numb
 host carries an explicit `(ESTIMATE)` or `(UNVERIFIED)` marker; see [Limitations](LIMITATIONS.md) for what
 this runbook does **not** prove.
 
-> **Status, 2026-07-27 — this is a specification, not a report.** The repository is documentation only.
-> `src/`, `tests/`, `scripts/`, `config/`, the `Makefile`, `docker-compose.yml` and `docs/metrics/` do not
-> exist yet. Every Make target, script, gate and assertion named below describes what M0–M15 must build;
-> **none of it has been run on this host**, so no verdict, duration, or RAM figure here is a measurement.
+> **Status, 2026-08-01 — the targets exist and were exercised; the seal itself was not.** M0–M14 are
+> complete: `src/`, `tests/`, `scripts/`, `config/`, the `Makefile`, `docker-compose.yml` and
+> `docs/metrics/latest.json` all exist, 258 tests pass, and `make smoke` reports 14/14. Provisioning ran
+> at M1 (models fetched at pinned revisions, gates run, `MANIFEST.json` signed) and the online negative
+> control ran live at M13. **What has NOT happened:** a real `make seal` plus physical disconnect (this
+> dev host is deliberately kept in `PROVISION`), and the host-specific targets `seal-pf`, `ollama-up`,
+> `up`, `ingest` and `query`, which are deferred. Every **duration** below is still an `(ESTIMATE)` — no
+> provisioning run was timed — and every **RAM total** is a projection; those markers stand.
 
 Repo root (note the spaces — quote it everywhere): `ROOT="/Users/tanishpd/Desktop/Secure Air-Gapped Platform with Integrated Guardrails"`
 
@@ -112,8 +116,9 @@ make provision    # runs scripts/provision/01..10 in order; resumable; idempoten
 one is doing and what to do when it stops. Running a step outside `make` is a debugging aid only and its
 exact invocation must match the shipped `Makefile` (**UNVERIFIED** — check before relying on it).
 
-**No provisioning run has been executed on this M2.** Every duration below is an `(ESTIMATE)` derived from
-artifact sizes at a nominal 20 MB/s. Replace them after the first real run.
+**Provisioning ran on this M2 at M1** (models fetched at pinned revisions, gates run, `MANIFEST.json`
+signed and committed) — but it was not timed. Every duration below is therefore still an `(ESTIMATE)`
+derived from artifact sizes at a nominal 20 MB/s; replace them after a timed run.
 
 ### A1 · `01_wheelhouse.sh` — offline wheel closures
 
@@ -140,8 +145,8 @@ a source build on the sealed host is what this step exists to prevent.
 **Expect:** per-file progress, then resolved paths. Verify byte counts: classifier `onnx/model.onnx` =
 **738,563,188 B**, `model.safetensors` = **737,719,272 B**, embedder `onnx/model.onnx` =
 **133,093,490 B**. **Download ~1.62 GB. 3–8 min (ESTIMATE).**
-**On failure:** a `401`/`403` means a repo flipped to gated — both were recorded as **ungated** at
-authoring time (UNVERIFIED on this host), so treat it as a supply-chain event, stop, and record it. A revision mismatch means `artifacts.lock` and upstream disagree;
+**On failure:** a `401`/`403` means a repo flipped to gated — both downloaded successfully as **ungated**
+at M1, so treat a new `401`/`403` as a supply-chain event, stop, and record it. A revision mismatch means `artifacts.lock` and upstream disagree;
 do not "fix" it by moving to `main`. `model.safetensors` exists only so A7 can compare torch-FP32 against
 ONNX-INT8; it is excluded from the runtime manifest subset.
 
@@ -193,8 +198,10 @@ quantize_dynamic("models/hf/injection/onnx/model.onnx",
                  "models/derived/injection-int8/model.onnx")   # DEFAULT op types
 ```
 
-**Expect:** quantizer progress, then the written path and size — expected ~190–220 MB, which is an
-**arithmetic estimate from the 128,100 × 768 embedding table, not a measurement (OQ-1)**.
+**Expect:** quantizer progress, then the written path and size. **Outcome on this host (OQ-2 resolved):**
+INT8 dynamic quantization **inverts** this DeBERTa-v3, so the A7 parity gate rejects it and the shipped
+classifier is the **FP32 ONNX** — see A7. The INT8 artifact is still produced here; it is simply not the
+model that ships.
 **No download. ~3 GB transient — which is why this runs before Ollama is started. 3–10 min (ESTIMATE).**
 **On failure:** do **not** pass `op_types_to_quantize=["MatMul","Gather"]` — `Gather` is already in
 `CommonOpsRegistry ⊂ IntegerOpsRegistry`, so passing the list *narrows* the set. If the host OOMs, close
@@ -207,10 +214,12 @@ everything and retry; nothing else should be resident.
 | Tokenizer parity | `tokenizers.Tokenizer.from_file(…)` produces byte-identical `input_ids`/`attention_mask` to `transformers.AutoTokenizer.from_pretrained(…)` over the full 63-case corpus |
 | INT8 parity | `\|Δ P(INJECTION)\| < 0.05` and **zero label flips** across the corpus, FP32 ONNX vs INT8 |
 | Embedding parity | ORT + CLS pooling + L2 norm matches `SentenceTransformer("BAAI/bge-small-en-v1.5").encode(…, normalize_embeddings=True)` to `atol=1e-4` over 200 fixtures |
-| RSS measurement | measured steady-state RSS of every ORT session; **fails provisioning if the INT8 classifier session exceeds 0.35 GB** |
+| RSS measurement | measured steady-state RSS of every ORT session; **fails provisioning if the classifier session exceeds 0.35 GB** |
 
-**Expect:** four `GATE … PASS` lines each printing its measured value, plus measured INT8 on-disk size and
-per-session RSS. **Record these — they replace the `(ESTIMATE)` rows of the BLUEPRINT §7 RAM table.**
+**Expect:** four `GATE … PASS` lines each printing its measured value. **Measured on this host at M1:** INT8
+parity **failed** (OQ-2 — INT8 inverts this DeBERTa-v3), so the ladder fell to **FP32 ONNX**; embedding
+parity **1.6e-07** (well inside `atol=1e-4`); FP32 classifier session RSS **0.30 GB**, under the 0.35 GB
+gate. These figures replace the corresponding `(ESTIMATE)` rows of the BLUEPRINT §7 RAM table.
 **No download. 2–5 min (ESTIMATE).**
 
 **This step is why `make seal` is unreachable with an unvalidated classifier.** `make provision` exits
@@ -219,11 +228,13 @@ There is no flag that skips it. Do not add one.
 
 - **Tokenizer gate fails:** stop. Dropping `transformers` from the runtime is safe *only because* this gate
   passes; a divergence means the sealed runtime tokenizes differently from the training-time tokenizer.
-- **INT8 parity fails (OQ-2 — a live possibility, not a formality):** walk the ladder in order — INT8 →
-  FP32 ONNX (kept on disk) → drop the LLM to `llama3.2:1b`. The FP32 session costs ~0.80 GB RSS instead of
-  ~0.30 GB (ESTIMATE), which is why the 3B has to go. Re-run `make provision`; the gate must pass on the
+- **INT8 parity fails (OQ-2 — this is what happened on this host):** walk the ladder in order — INT8 →
+  FP32 ONNX (kept on disk) → drop the LLM to `llama3.2:1b`. On this host the ladder stopped at **FP32**:
+  its session RSS is **0.30 GB measured** (ORT mmaps the weights), the same budget INT8 would have used, so
+  the FP32 fallback did **not** force dropping the 3B. Re-run `make provision`; the gate must pass on the
   configuration you intend to seal.
-- **RSS gate fails (> 0.35 GB):** same ladder. Do not raise the threshold to make it pass.
+- **RSS gate fails (> 0.35 GB):** same ladder. Do not raise the threshold to make it pass. (The shipped
+  FP32 session measured 0.30 GB, so this gate passed.)
 
 ### A8 · `08_tldextract_cache.py` — warm the Public Suffix List
 
@@ -258,9 +269,11 @@ make eval            # corpus metrics -> docs/metrics/latest.json  (commit this 
 
 `make seal` refuses without `evidence/verify-online-<gen>.json` carrying `all_probes_blocked == true`.
 
-`docs/metrics/latest.json` **does not exist**; it is produced by the first `make eval` at M6. Until then
-every metric floor in [Evaluation](EVALUATION.md) §5 is a build-gate target, not a measurement, and there
-is no baseline to regress against.
+`docs/metrics/latest.json` **exists** — first produced by `make eval` at M6. Measured headline injection
+recall is **1.0** and PII recall **1.0** for the four covered entities; precision **0.81** and benign FPR
+**0.32** miss their 0.85 / 0.10 targets and are tracked as OPEN `known_gaps` (medium). Those measurements
+are now the regression baseline: the recall and PII floors in [Evaluation](EVALUATION.md) §5 are hard
+gates, precision/FPR are regression-gated.
 
 ---
 
@@ -378,9 +391,10 @@ make audit-verify  # hash-chain walk; exit 1 on any break
 make proof         # verify + evidence
 ```
 
-Each assertion is specified to assert on the **`EgressViolation` type**, never on a generic connection
-failure, and each is to be paired with a positive control so it cannot pass for the wrong reason. None of
-the nine has been written or run (M13).
+Each assertion asserts on the **`EgressViolation` type**, never on a generic connection failure, and each
+is paired with a positive control so it cannot pass for the wrong reason. All nine are written and ran at
+M13: every assertion **passed** and every paired control behaved as expected — but the run's verdict was
+`INVALID` by design, because this host was never sealed (see the verdicts table below).
 
 | # | Assertion | Paired negative control |
 |---|---|---|
@@ -403,8 +417,9 @@ the spike runs, the Docker path's isolation is **untested**, never "isolated".
 
 ### Annotated PASS output
 
-The shape is the contract; the values are illustrative. **No `make verify` run has occurred** — this is a
-specimen of the output format, not a transcript.
+The shape is the contract; the values are illustrative. `make verify` **has run** (M13, all nine
+assertions and their controls green), but on an unsealed host it returns `INVALID` by design, so the `PASS`
+transcript below remains a specimen of the output format, not a capture from this host.
 
 ```
 $ make verify
@@ -461,7 +476,8 @@ Nothing was proven.
 |---|---|
 | `PASS` | Every assertion held **and** every paired control behaved as expected. |
 | `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS` | All assertions held, but a `known_gap` with `severity: high`, `status: OPEN` is recorded. Never report this as `PASS`. |
-| `INVALID` | The run proves nothing. Do not publish it. |
+| `FAIL` | A control that should have held provably leaked — an assertion failed. |
+| `INVALID` | The run proves nothing (an invalidating condition fired — see below). Do not publish it. |
 
 **Invalidating conditions — any one forces `INVALID`:** a negative control failed; the guard is not
 installed; the manifest was verified in `quick` mode (it skips every file's interior); a non-loopback
@@ -630,7 +646,7 @@ evicts first are the idle security controls.
         http://127.0.0.1:8000/v1/admin/quarantine | python3 -m json.tool
    ```
    Chunks scoring ≥ 0.95, carrying a high-confidence heuristic, or flagged `truncated=True` are already in
-   `docs_quarantine` and were never retrievable. Pages flagged `PDF_TINY_FONT`, `PDF_OFFPAGE_TEXT`, or
+   the `<collection>__quarantine` sibling and were never retrievable. Pages flagged `PDF_TINY_FONT`, `PDF_OFFPAGE_TEXT`, or
    `PDF_INVISIBLE_RENDER` were quarantined at load.
 3. Remove the **whole document**, not just the offending chunk: delete by `doc_sha256` from the main
    collection.
@@ -649,8 +665,9 @@ evicts first are the idle security controls.
    than none.
 3. Re-run the gate; read the reported `|Δ P(INJECTION)|` and the label-flip count. **Zero label flips** is
    the hard part — a flip means a previously-blocked attack now scores safe, or vice versa.
-4. Walk the ladder: INT8 → FP32 ONNX (kept on disk for exactly this) → drop the LLM to `llama3.2:1b` to buy
-   back the ~0.50 GB of *additional* RSS the FP32 session costs over INT8 (~0.80 vs ~0.30 GB, both ESTIMATE).
+4. Walk the ladder: INT8 → FP32 ONNX (kept on disk for exactly this) → drop the LLM to `llama3.2:1b` only
+   if RSS demands it. On this host it did not: the FP32 session RSS is **0.30 GB measured** (ORT mmaps the
+   weights), the same budget INT8 would have used, so FP32 ships alongside `llama3.2:3b`.
 5. Verify the label index is still resolved from `config.json` `id2label` (`{"0": "SAFE", "1": "INJECTION"}`,
    matched **casefolded**) and not hardcoded. A hardcoded index 1 is the inverted-guardrail bug: it blocks
    benign traffic and allows attacks.
@@ -663,8 +680,9 @@ evicts first are the idle security controls.
 3. Find the cause — it is nearly always one of: an `8b` tag is configured (9.28 GB projected — **it does not
    fit in any configuration**) · `PROFILE=demo` is on, adding Docker Desktop's VM (system total ~7.60 GB
    projected for the demo profile, vs 6.75 GB projected for embedded — no margin either way) ·
-   `en_core_web_lg` instead of `md` (+0.60 GB (ESTIMATE)) · the FP32 classifier fallback is active
-   (+0.50 GB (ESTIMATE)) · more than one uvicorn worker.
+   `en_core_web_lg` instead of `md` (+0.60 GB (ESTIMATE)) · more than one uvicorn worker. (The FP32
+   classifier is the *shipped* config, not an OOM cause — its session RSS is **0.30 GB measured**, the same
+   as INT8 would have used.)
 4. Remediate: return to `llama3.2:3b-instruct-q4_K_M`, `SAGP_QDRANT_MODE=embedded`, `en_core_web_md`,
    `--workers 1`; close other applications.
 5. **Treat this as a security event, not a performance one.** The pages macOS evicts under pressure are the
@@ -722,7 +740,7 @@ this host.
 | `make spike-docker` | BOOTSTRAP (Phase 0) | Must resolve OQ-4 (`internal: true` alongside a published `127.0.0.1:6333`) and OQ-5 (does `enable_ip_masquerade: "false"` block egress on Docker Desktop?) empirically → ADR-0002, which stays **Proposed** until it runs. **Not yet run** (§1) | ~10 MB | ~10 min |
 | `make provision` | PROVISION | Steps 01–10; resumable; idempotent; **non-zero exit on any gate failure** | **~8.2 GB**, plus the 4.7 GB `llama3:8b` tag pulled at A4 — included in BLUEPRINT §8's totals | 25–55 min |
 | `make verify-online` | PROVISION | Negative control: probes succeed in `audit` mode, raise `EgressViolation` in `enforce` | — | < 30 s |
-| `make eval` | PROVISION | Corpus run → `docs/metrics/latest.json` (**created at M6; the file does not exist today**); >2pp regression fails the build | — | 3–10 min |
+| `make eval` | PROVISION | Corpus run → `docs/metrics/latest.json` (**created at M6; the file now exists and is committed**); >2pp regression fails the build | — | 3–10 min |
 | `make seal` | PROVISION→OPERATE | Writes `.env.sealed` + `state.json`; installs the `.pth` guard; `seal_generation++` | — | < 10 s |
 | `make seal-pf` | SEAL | Phase 2, immediately after `make seal` and **before** the physical disconnect (§3 B3). Loads `deploy/pf/com.sagp`. **Dry-run parse first.** `sudo` | — | < 10 s |
 | `make ollama-up` | OPERATE | launchd plist, loopback-bound, env from `.env.sealed` | — | 5–20 s |

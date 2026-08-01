@@ -2,14 +2,14 @@
 
 Records why the sealed host serves `llama3.2:3b-instruct-q4_K_M` through Ollama rather than through vLLM, and what would have to change for that to be revisited.
 
-- **Status:** Accepted
-- **Date:** 2026-07-27
+- **Status:** Accepted — implemented (M1 provisioning, M7 client)
+- **Date:** 2026-07-27 (decision); 2026-08-01 (implemented)
 - **Deciders:** Project architect
 - **Supersedes:** —
 
 ## Context
 
-The target machine is an Apple M2, arm64, macOS Darwin 25.5.0, **8 GB unified RAM (hard ceiling)**, 8 cores. That single hardware fact drives every runtime choice below. Every RAM figure quoted in this ADR is a PROJECTION against that ceiling; nothing in this repository has been measured. See the RAM table in [BLUEPRINT §7](../BLUEPRINT.md) and [PLAN §6](../PLAN.md).
+The target machine is an Apple M2, arm64, macOS Darwin 25.5.0, **8 GB unified RAM (hard ceiling)**, 8 cores. That single hardware fact drives every runtime choice below. Every RAM figure quoted in this ADR is a PROJECTION against that ceiling; the LLM runtime footprint in particular has not been measured on this host (OQ-8). See the RAM table in [BLUEPRINT §7](../BLUEPRINT.md) and [PLAN §6](../PLAN.md).
 
 Forces:
 
@@ -28,7 +28,7 @@ The LLM runtime also sits **outside** both Python egress-guard layers — it is 
 
 **Serve the LLM with Ollama**, bound to `127.0.0.1:11434`, models stored under `OLLAMA_MODELS="$PWD/models/ollama"`, called through `ollama==0.6.2` from the sealed venv. vLLM is not a dependency of this project in any venv.
 
-Specifics: `llama3.2:3b-instruct-q4_K_M` (2.0 GB) is the default; `OLLAMA_CONTEXT_LENGTH=4096`, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, `keep_alive="30m"`. `num_ctx` is never passed per request — that forces a full model reload. `llama3.2:1b` is pulled during provisioning as the fallback rung of the [ADR-0004](0004-onnx-int8-no-torch.md) ladder. `llama3:8b` is pulled during provisioning so it is one env var away, but is documented as **does not fit** (projects to 9.28 GB in the embedded profile against an 8 GB ceiling — PROJECTION, unmeasured) and is specified to trigger a loud startup warning below 16 GB of host RAM.
+Specifics: `llama3.2:3b-instruct-q4_K_M` (2.0 GB) is the default; `OLLAMA_CONTEXT_LENGTH=4096`, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, `keep_alive="30m"`. `num_ctx` is never passed per request — that forces a full model reload. `llama3.2:1b` is pulled during provisioning as the fallback rung of the [ADR-0004](0004-onnx-int8-no-torch.md) ladder. `llama3:8b` was **skipped at M1** (disk-constrained on this host, and it does not fit in 8 GB anyway); the design keeps it one env var away when pulled, documented as **does not fit** (projects to 9.28 GB in the embedded profile against an 8 GB ceiling — PROJECTION, unmeasured), and it triggers a loud startup warning below 16 GB of host RAM.
 
 ## Alternatives considered
 
@@ -72,7 +72,7 @@ ollama ps          # SIZE column is the real allocation; expected ~2.59 GB (ESTI
 ! .venv-provision/bin/pip show vllm  > /dev/null 2>&1
 ```
 
-Gates (specifications — no make target or test exists yet): `make smoke` check `[ 8/14]` is specified to assert Ollama is reachable and the tag is present. `make serve` is specified to refuse to boot above 90% projected RSS. `tests/e2e/` is specified to perform one real generation under the `needs_ollama` marker.
+Gates (implemented; `make smoke` reports 14/14): `make smoke` check `[ 8/14]` asserts Ollama is reachable and the tag is present. `make serve` (M14) refuses to boot above 90% projected RSS. `tests/e2e/` performs one real generation under the `needs_ollama` marker — validated at M7 against local `llama3.2:3b`. The runner-footprint measurement (OQ-8) has not been taken.
 
 ---
 

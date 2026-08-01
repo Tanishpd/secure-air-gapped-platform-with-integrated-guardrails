@@ -5,9 +5,12 @@ audit chain mean anything, retention, model rotation, backup and restore, monito
 something breaks. Phase-by-phase procedures live in the [Air-gap runbook](AIRGAP_RUNBOOK.md); this document
 covers what you do between provisioning runs.
 
-> **Status, 2026-07-27.** The repository is documentation only. No `src/`, `scripts/`, `config/`, `tests/`
-> or `Makefile` exists, and nothing described here has been executed. Every command, file, gate and signal
-> named below is a specification of what M0–M15 must build, not a report of an operating system.
+> **Status, 2026-08-01.** M0–M14 are built, merged, and tested — `src/`, `scripts/`, `config/`, `bin/`,
+> `tests/`, and the `Makefile` all exist, 258 tests pass, and `make smoke` is 14/14. The commands, files,
+> gates and signals named below reference real targets. What remains an ESTIMATE is called out where it
+> appears (all latency and RAM figures). The dev host is deliberately kept in PROVISION — never sealed for
+> real — so the sealed-host procedures here are documented and self-tested, not exercised end-to-end on a
+> production seal.
 
 ---
 
@@ -42,12 +45,10 @@ the five secrets above.
   Adequate for a single-tenant sealed box, inadequate for anything else. Treat `SAGP_API_TOKEN_REVEAL` as
   the most sensitive of the five.
 
-**OQ-12 (M2-blocking).** The BLUEPRINT specifies `audit/hashing.py` as exposing `hmac_token`
-(domain-separated), `sha256_hex`, and `chain_digest`, and separately lists both `SAGP_AUDIT_HMAC_KEY`
-and `SAGP_PII_PEPPER`. It does not state which of the two keys `pii_token_hmacs` is derived from
-(the pepper, almost certainly — but pin it, don't assume). Resolve at M2, before the audit spine is
-written, and correct the two middle rows of the table above to match. Tracked as **OQ-12** in
-BLUEPRINT §14.
+**OQ-12 (RESOLVED at M2).** `audit/hashing.py` exposes `hmac_token` (domain-separated), `sha256_hex`,
+and `chain_digest`. `pii_token_hmacs` are derived from the **PII pepper** (`SAGP_PII_PEPPER`), not the
+audit HMAC key — confirmed in `audit/hashing.py` ("the key is the PII pepper"), so the two middle rows of
+the table above are correct as written. Tracked as **OQ-12** in BLUEPRINT §14.
 
 ---
 
@@ -126,8 +127,10 @@ design, not an oversight:
 
 - the revision lives in `artifacts.lock`, and every file it names is hashed into `MANIFEST.json`;
 - the boot sequence runs **full** manifest verification, so a swapped file is a startup failure;
-- a new classifier must pass `07_gates.py` (tokenizer parity, INT8 parity with **zero label flips**,
-  measured RSS ≤ 0.35 GB) before anything can be sealed;
+- a new classifier must pass `07_gates.py` (tokenizer parity, FP32 reference correctness, and a measured
+  session RSS ≤ 0.35 GB — **0.30 GB measured** FP32 on this host, OQ-1) before anything can be sealed; the
+  gate also runs an INT8-vs-FP32 parity check, which is what surfaced OQ-2 — INT8 dynamic quant **inverts**
+  this DeBERTa-v3, so the runtime scorer runs **FP32, not INT8**;
 - a new embedder invalidates the whole index — `embed_model` and `embed_revision` are written into every
   point payload, and a query-time mismatch is a hard error rather than a silent recall collapse.
 
@@ -141,10 +144,10 @@ Procedure:
 4. Reconnect, `make provision`. Read the step A7 gate output carefully; a new classifier is exactly the case
    the gates exist for.
 5. `make eval`. Any metric more than 2pp below the baseline in `docs/metrics/latest.json` fails the build.
-   That file **does not exist yet** — it is produced by the first `make eval` at M6 — so until M6 there is
-   no baseline and only the absolute floors ([Evaluation](EVALUATION.md) §5, which are build-gate targets
-   rather than measurements) apply. If the new model is genuinely better, commit the new baseline; if it is
-   worse, that is the answer.
+   That file **exists** and carries the committed M6 baseline (headline recall 1.0, PII recall 1.0;
+   precision 0.81 and benign FPR 0.32 tracked as OPEN `known_gaps`), so both the 2pp regression gate and
+   the absolute floors ([Evaluation](EVALUATION.md) §5) apply. If the new model is genuinely better, commit
+   the new baseline; if it is worse, that is the answer.
 6. **If the embedder changed, re-ingest everything.** Old points carry the old `embed_revision` and will not
    be queried. Drop and rebuild the collections.
 7. `make verify-online`, `make seal`, full physical disconnect, `make proof`.
@@ -207,17 +210,18 @@ to check on a schedule, and what each one means.
 | RSS per component | `GET /readyz` (ONNX sessions, spaCy pipeline, Presidio registry, vector store); `ollama ps` for the runner | App process above **1.40 GB** is the refuse-to-boot gate; system projection above 90% of physical RAM also refuses. Rising `Swapouts` in `vm_stat` → [Runbook §7.6](AIRGAP_RUNBOOK.md#76-oom--swap-thrash). |
 | Egress violation counter | `GET /airgap/status` → `python_egress_attempts_blocked` | **Any increase is an incident**, even though the attempt was blocked. Something in-process tried to reach the network. Note the field is named for what it measures — it counts *Python-layer* attempts, and cannot see native or external-process egress. |
 | Rate-limit near-miss alarm | `app/ratelimit.py` burst alarm; audit records | Repeated near-misses without 429s are a client about to be throttled, or an attacker pacing themselves just under the limit. |
-| Quarantine growth | `GET /v1/admin/quarantine`; point count in `docs_quarantine` | Steady growth is normal on a poisoned or noisy corpus. A **step change** after one ingest means that document needs [Runbook §7.4](AIRGAP_RUNBOOK.md#74-suspected-poisoned-document). |
+| Quarantine growth | ingest response `chunks_quarantined` / `pages_quarantined`; point count in the `<collection>__quarantine` sibling | Steady growth is normal on a poisoned or noisy corpus. A **step change** after one ingest means that document needs [Runbook §7.4](AIRGAP_RUNBOOK.md#74-suspected-poisoned-document). |
 | Audit write latency | per-stage timings in the audit record; request p95 | Every request `fsync`s before responding, and an audit write failure returns **503 with the response withheld**. Growing write latency shows up as whole-request latency and is usually disk pressure. |
 | Refusal rate | `decision="refuse_insufficient_context"` in audit records | A rising rate means retrieval is not finding strong hits (STRONG = 0.50) — usually an empty, stale, or over-quarantined collection. |
 | Block rate and its mix | `/v1/admin/incident/{id}` | Blocks are uniform 400s to the client by design; only the audit record says which detector fired. A shift in the mix is the earliest signal that thresholds or the corpus need attention. |
 
 **Note on p50/p95 targets: there are none yet.** All latency figures in the source design are ESTIMATES and
-no benchmark has been run on this M2 — and the same holds for every other number: no guardrail metric, RAM
-figure, recall number or accuracy figure anywhere in this repository has been measured. RAM projections are
-profile-specific (6.75 GB embedded, 7.60 GB demo/Docker, against an 8 GB ceiling) and both are projections.
-Establish your own baseline over the first week of real traffic and compare against that, not against a
-number from a document.
+no latency benchmark has been run — establish your own baseline over the first week of real traffic and
+compare against that, not against a number from a document. The guardrail *quality* metrics, by contrast,
+are measured and committed (M6, `docs/metrics/latest.json`: recall and PII floors met; precision 0.81 and
+benign FPR 0.32 below target). RAM totals remain profile-specific projections (6.75 GB embedded, 7.60 GB
+demo/Docker, against an 8 GB ceiling); the injection classifier's own session RSS is measured at 0.30 GB
+(FP32).
 
 ---
 

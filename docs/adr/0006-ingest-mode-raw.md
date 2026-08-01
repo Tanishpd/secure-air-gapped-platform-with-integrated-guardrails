@@ -2,8 +2,8 @@
 
 Records why the vector store holds unmasked document text, why masking at ingest was deleted rather than made optional, and the compliance consequence that follows.
 
-- **Status:** Accepted
-- **Date:** 2026-07-27
+- **Status:** Accepted — implemented (M8 ingestion, M10 retrieval masking, M12 document scan)
+- **Date:** 2026-07-27 (decision); 2026-08-01 (implemented)
 - **Deciders:** Project architect
 - **Supersedes:** —
 
@@ -33,7 +33,7 @@ Specifics:
 | Stage | Behaviour |
 |---|---|
 | I6 (ingest) | `analyze` at INGRESS 0.50 per chunk → record `entity_types_counts` into the payload. **No masking. The BLOCK list is NOT applied** — a document legitimately containing a card number must be storable. |
-| I8 (ingest) | Injection verdict routes the chunk: `quarantined` → `docs_quarantine` (never retrieved), otherwise the main collection. |
+| I8 (ingest) | Injection verdict routes the chunk: `quarantined` → the per-collection `<collection>__quarantine` sibling (never retrieved), otherwise the main collection. |
 | C14 (retrieval) | `query_points(..., query_filter=must_not guard.verdict == "quarantined")`. |
 | C17 (retrieval) | `BatchAnalyzerEngine.analyze_iterator(chunks, "en", batch_size=6, n_process=1)` at the EGRESS profile (0.35), then `anonymize` each with the **same vault**, `origin=f"doc:{sha}"`. **The BLOCK list is NOT applied to chunks** — a blocked retrieval would be a document-content oracle. |
 
@@ -83,7 +83,7 @@ make query Q="What is the parental leave policy?"
 ! grep -rn "ingest_mode" src/ config/ | grep -qi masked
 ```
 
-Gates (specifications — no make target, test or sample file exists yet): `make smoke` check `[12/14]` is specified to assert the prompt sent to Ollama contains `<EMAIL_ADDRESS_1>` and not the address; check `[14/14]` is specified to grep the audit JSONL **bytes** for PII markers. `tests/e2e/test_final_bytes_were_scanned.py` is specified to assert the exact string sent to Ollama was an argument to a `scan()` call in the same request — the only test that will assert on the bytes that actually crossed the boundary. `make eval` is specified to enforce the per-entity PII recall floors (EMAIL ≥ 0.98, CREDIT_CARD ≥ 0.98, IN_AADHAAR ≥ 0.95, PERSON ≥ 0.80) — **build-gate targets, not measurements: no PII recall has been measured** — and, from the second run onwards, to fail the build on any metric more than 2pp below the previous baseline in `docs/metrics/latest.json`, which is produced by `make eval` at M6 and does not exist yet.
+Gates (implemented; `make smoke` reports 14/14): `make smoke` check `[12/14]` asserts the prompt sent to Ollama contains `<EMAIL_ADDRESS_1>` and not the address; check `[14/14]` greps the audit JSONL **bytes** for PII markers. `tests/e2e/test_final_bytes_were_scanned.py` asserts the exact string sent to Ollama was an argument to a `scan()` call in the same request — the one test that asserts on the bytes that actually crossed the boundary. `make eval` ran at M6 and **measured** PII recall at **1.0** for every enforced floor (EMAIL ≥ 0.98, CREDIT_CARD ≥ 0.98, IN_AADHAAR ≥ 0.95, PERSON ≥ 0.80 — all met); from the second run onwards it fails the build on any metric more than 2pp below the previous baseline in `docs/metrics/latest.json`, which now exists. (No PII recall floor is asserted for Devanagari or transliterated names — OQ-9, still unevaluated.)
 
 ---
 

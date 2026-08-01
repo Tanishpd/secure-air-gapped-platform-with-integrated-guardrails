@@ -2,12 +2,12 @@
 
 Records why interleaved-token spotlighting was dropped from the prompt assembly, and what carries the untrusted-content boundary in its place.
 
-- **Status:** Accepted
-- **Date:** 2026-07-27
+- **Status:** Accepted — implemented (M9 sole prompt builder; ingest/context scans M8/M10/M12)
+- **Date:** 2026-07-27 (decision); 2026-08-01 (implemented)
 - **Deciders:** Project architect
 - **Supersedes:** —
 
-> **Status note:** decided on structural grounds; the distribution argument is not yet backed by measurement. No guardrail metric in this repository has been measured (GUARDRAILS §10.2).
+> **Status note:** decided on structural grounds. Guardrail accuracy metrics have since been measured at M6 (headline injection recall 1.0), but the *datamarking* distribution argument specifically remains unbacked by measurement: there is no llama3 tokenizer in the runtime venv, so the token-blowup figure is still a character proxy (OQ-3).
 
 ## Context
 
@@ -37,7 +37,7 @@ Retrieved content goes in the **user** role, never the system role. The delimite
 
 **1. Token blowup of 1.5–3× on a llama3 BPE.** Interleaving `U+2581` between every word of text tokenized by a byte-level BPE that was not trained on that pattern does not produce one extra token per word — it fragments the surrounding words too, because the marker breaks the byte sequences the merge table expects. Against `SAGP_MAX_CTX_CHARS=7000` and a 4096-token context, a 1.5–3× multiplier means either half the retrieved evidence is dropped or the closing delimiter is silently truncated away. (The 1.5–3× range is the figure carried from the source analysis; **no measurement exists on this host** — see OQ-3.)
 
-**2. It pushes the retrieval re-scan out of the classifier's training distribution.** This is the disqualifying reason. C19 scans the *assembled* context. If that context is `▁word▁word▁word`, the classifier is being asked to score text that looks nothing like the prose it was fine-tuned on. Its scores on that input are not characterised, its threshold of 0.90 has not been calibrated on it, and the recall/precision/FPR that `make eval` will compute at M6 would describe a different input distribution than the one in production. Datamarking would improve one defence (the model's ability to tell data from instruction) by degrading another (the classifier that is the actual detection control) by an unknown amount. On a system whose claim is that its guardrails will be *measured* against a stated corpus, that trade is not available.
+**2. It pushes the retrieval re-scan out of the classifier's training distribution.** This is the disqualifying reason. C19 scans the *assembled* context. If that context is `▁word▁word▁word`, the classifier is being asked to score text that looks nothing like the prose it was fine-tuned on. Its scores on that input are not characterised, its threshold of 0.90 has not been calibrated on it, and the recall/precision/FPR that `make eval` computed at M6 would describe a different input distribution than the one in production. Datamarking would improve one defence (the model's ability to tell data from instruction) by degrading another (the classifier that is the actual detection control) by an unknown amount. On a system whose claim is that its guardrails are *measured* against a stated corpus, that trade is not available.
 
 ## Alternatives considered
 
@@ -53,7 +53,7 @@ Retrieved content goes in the **user** role, never the system role. The delimite
 ## Consequences
 
 ### Positive
-- The prompt costs what the text costs — the context budget is spent on evidence, not markers. The C19 re-scan sees ordinary prose, which is the distribution the M6 evaluation will be run against, so the recall/precision/FPR that `make eval` will compute — and that `docs/metrics/latest.json` will eventually carry — should describe production input. No metric has been measured yet, and `docs/metrics/latest.json` does not exist until M6 (GUARDRAILS §10.2).
+- The prompt costs what the text costs — the context budget is spent on evidence, not markers. The C19 re-scan sees ordinary prose, which is the distribution the M6 evaluation was run against, so the recall/precision/FPR that `make eval` computed — and that `docs/metrics/latest.json` now carries (headline injection recall 1.0; family F, the document-planted family, reported separately at 1.0) — describes production input.
 - The delimiter is not forgeable in advance (a fresh 64-bit nonce per request), and forging attempts are designed to be caught on both sides: `DELIMITER_SPOOF` on ingress (C4 → 400) and nonce-leak detection on egress (C22a → refusal).
 - One builder. `rag/prompt.py` is the sole assembler, so the output guard knows exactly which scheme was used and what to look for.
 
@@ -84,7 +84,7 @@ Retrieved content goes in the **user** role, never the system role. The delimite
 #   nonce delimiter echoed in a completion  -> refusal.txt
 ```
 
-Gates (specifications — no make target, test or sample file exists yet): `make smoke` check `[10/14]` is specified to ingest `data/samples/poisoned_appendix.pdf` and to require its payload chunk to land in `docs_quarantine`. `make eval` is specified to report the indirect / document-planted family (corpus items 33–45) **as its own category, never averaged into the headline recall number**. `tests/e2e/test_final_bytes_were_scanned.py` is specified to assert that the exact string sent to Ollama was an argument to a `scan()` call in the same request — which is only a meaningful assertion because the scanned text and the generated text are the same bytes.
+Gates (implemented; `make smoke` reports 14/14): `make smoke` check `[10/14]` ingests `data/samples/poisoned_appendix.pdf` and requires its payload chunk to land in the `<collection>__quarantine` sibling. `make eval` reports the indirect / document-planted family (family F) **as its own category, never averaged into the headline recall number** — measured at 1.0 at M6. `tests/e2e/test_final_bytes_were_scanned.py` asserts that the exact string sent to Ollama was an argument to a `scan()` call in the same request — which is only a meaningful assertion because the scanned text and the generated text are the same bytes.
 
 ---
 

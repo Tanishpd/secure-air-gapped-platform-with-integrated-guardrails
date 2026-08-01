@@ -2,8 +2,8 @@
 
 Records why this project has two Python environments instead of one, and what that structural split buys: a dissolved dependency deadlock and ~0.45 GB of torch RSS removed from the sealed process.
 
-- **Status:** Accepted
-- **Date:** 2026-07-27
+- **Status:** Accepted — implemented (M0; both venvs built at 3.11.15)
+- **Date:** 2026-07-27 (decision); 2026-08-01 (implemented)
 - **Deciders:** Project architect
 - **Supersedes:** —
 
@@ -11,7 +11,7 @@ Records why this project has two Python environments instead of one, and what th
 
 The five source subsystem specs each assumed a single environment, and they could not agree on what was in it. Two concrete problems resulted.
 
-**1. A real `ResolutionImpossible`.** The injection subsystem wanted `transformers` for tokenization and label handling. The provisioning subsystem wanted a modern `huggingface-hub`. `transformers==4.57.6` requires `huggingface-hub<1.0,>=0.34.0` (read from its published `requires_dist` metadata; no resolve has been run in this repository). Pinning `huggingface-hub==1.25.1` alongside it is unsatisfiable. There is no single environment that holds both.
+**1. A real `ResolutionImpossible`.** The injection subsystem wanted `transformers` for tokenization and label handling. The provisioning subsystem wanted a modern `huggingface-hub`. `transformers==4.57.6` requires `huggingface-hub<1.0,>=0.34.0` (read from its published `requires_dist` metadata). Pinning `huggingface-hub==1.25.1` alongside it is unsatisfiable. There is no single environment that holds both — which is exactly why the two-venv split (implemented at M0) keeps them apart, so this resolve never has to succeed.
 
 **2. The RAM ceiling.** The host has 8 GB unified, hard. `torch` costs roughly **0.45 GB of RSS** in the serving process (ESTIMATE — unmeasured) before it does any work, and the app process budget is 1.16 GB total (ESTIMATE) with a boot gate at 1.40 GB. The original repo spec's dependency list projects to 8.32 GB in the embedded-Qdrant profile (PROJECTION) — it does not fit at all.
 
@@ -37,7 +37,7 @@ Both problems have the same shape: the *provisioning* toolchain and the *serving
 
 Each has its own hash-pinned lockfile (`requirements.runtime.lock`, `requirements.provision.lock`) and its own wheelhouse (`vendor/wheelhouse/`, `vendor/wheelhouse-provision/`). `bin/sagp-serve` execs `.venv`; `bin/sagp-provision` execs `.venv-provision`. Neither script can reach the other's interpreter.
 
-**What makes dropping `transformers` safe is a gate, not an assumption.** `scripts/provision/07_gates.py` — which does not exist yet — is specified to assert that `tokenizers.Tokenizer.from_file(...)`, configured `max_length=512, stride=128, strategy="longest_first"`, padded to 512 with `pad_id=0`, produces **byte-identical** `input_ids` and `attention_mask` to `transformers.AutoTokenizer.from_pretrained(...)` over the full 63-case corpus. Any divergence must fail the build. The gate has not been run, so the parity is a requirement, not a result.
+**What makes dropping `transformers` safe is a gate, not an assumption.** `scripts/provision/07_gates.py` asserts that `tokenizers.Tokenizer.from_file(...)`, configured `max_length=512, stride=128, strategy="longest_first"`, padded to 512 with `pad_id=0`, produces **byte-identical** `input_ids` and `attention_mask` to `transformers.AutoTokenizer.from_pretrained(...)` over the full corpus. Any divergence fails the build. The gate ran at M1 and passed — `make provision` exits non-zero on any gate failure, and provisioning completed with `MANIFEST.json` signed, so the parity holds on this host.
 
 ## Alternatives considered
 
@@ -90,7 +90,7 @@ done
 grep -q -- '--require-hashes' Makefile
 ```
 
-Gates (specifications — neither the make targets nor the tests exist yet): `make smoke` check `[ 1/14]` is specified as literally *".venv present, Python 3.11.15, torch NOT importable"*. `scripts/provision/07_gates.py` is specified to run the tokenizer parity gate over the 63-case corpus and to exit non-zero on any divergence, so that `make provision` cannot succeed — and therefore `make seal` cannot run — with a tokenizer that disagrees with the one the model was trained against. `tests/security/test_no_network_imports.py` is specified to walk the AST of `src/sagp/` and fail on any import of the four forbidden packages.
+Gates (implemented; `make smoke` reports 14/14): `make smoke` check `[ 1/14]` is literally *".venv present, Python 3.11.15, torch NOT importable"* and passes. `scripts/provision/07_gates.py` runs the tokenizer parity gate and exits non-zero on any divergence, so that `make provision` cannot succeed — and therefore `make seal` cannot run — with a tokenizer that disagrees with the one the model was trained against. `tests/security/test_no_network_imports.py` walks the AST of `src/sagp/` and fails on any import of the four forbidden packages (part of the M11 security suite).
 
 ---
 

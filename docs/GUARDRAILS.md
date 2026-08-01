@@ -24,8 +24,8 @@ out, exceeds a window cap, or returns a partial result set produces a rejection 
 `200` with the check skipped. There is no `*_FAIL_MODE=open`, no `SAGP_DISABLE_*`, no debug bypass.
 `CLAUDE.md` invariants 3 (never bypass the guardrail pipeline) and 6 (never let an `except` silently
 disable a guardrail — fail-CLOSED) exist to keep it that way, and
-`tests/security/test_guardrail_bypass.py` is specified to enforce them with an AST walk plus a
-runtime spy. That test has not been written; it lands at M10 (per BLUEPRINT §10).
+`tests/security/test_guardrail_bypass.py` enforces them with an AST walk plus a
+runtime spy. That test exists and passes as of M10 (per BLUEPRINT §10).
 
 Concretely, fail-closed means these are all the same answer:
 
@@ -65,9 +65,10 @@ and any reject that overruns the deadline is itself a finding. No score, thresho
 substring, entity type, model name, or window index ever leaves the box. A 403-vs-400 split, a
 returned score, or an `X-PII-Masked-Count` header would each let an attacker hill-climb the thresholds
 — and because `CreditCardRecognizer` is Luhn-binary, a leaked count is literally a card-number
-validator. `tests/security/test_oracle_uniformity.py` is specified to assert that every detector
-produces the same bytes **and terminates at the same deadline**; the test lands at M10, and its
-deadline value is calibrated from measured latencies at M13. (The one
+validator. `tests/security/test_oracle_uniformity.py` asserts that every detector
+produces the same bytes **and terminates at the same deadline**; the test exists and passes (M10), and
+its deadline value is still to be calibrated from measured latencies at M13 — no latency benchmark has
+run on the M2 yet, so 120 ms remains a placeholder. (The one
 exception is C1 `UNSUPPORTED`, a pre-detector schema error that reveals nothing about a detector and is
 not padded — see BLUEPRINT §5.7.)
 
@@ -94,7 +95,7 @@ assembled, masked prompt that reaches the LLM), **response** (what the LLM produ
 | — | Retrieval: embed, `query_points`, `MIN 0.35` / `STRONG 0.50` (C13–C15) | — | 503 on store error; deterministic refusal below STRONG | 20–60 ms |
 | **G4a** | Per-chunk `normalize()` + `neutralize_placeholders()`; `n > 0` → drop chunk (C16) | context | chunk dropped + high-severity alarm | 1–5 ms |
 | **G4b** | `BatchAnalyzerEngine` EGRESS 0.35 mask of retrieved chunks into the same vault (C17) | context | 503 | 40–150 ms |
-| **G4c** | Nonce-delimited assembly + **single** re-scan of assembled context at 0.90 (C18–C19) | context | drop highest-scoring chunk, reassemble, rescan (max 2); all dropped → refusal; 503 on error | 150–350 ms |
+| **G4c** | Per-chunk drop-and-continue (C19a) + re-scan of the assembled context at 0.90 (C18–C19b) | context | flagged chunks dropped; all dropped → refusal; assembled-string hit → refusal; 503 on error | 150–350 ms |
 | — | Ollama generate, buffered, `stream=False`, 120 s timeout (C21) | — | 503 | seconds |
 | **G5a** | Output structural: strip images/links; nonce or system-prompt n-gram present → block (C22a) | response | `refusal.txt` | 1–5 ms |
 | **G5b** | Egress PII scan of the **raw** response at 0.35, masked into the same vault (C22b) | response | 503 | 40–150 ms |
@@ -198,8 +199,8 @@ def normalize(raw: str) -> tuple[str, list[str]]:
 `neutralize_placeholders()` runs **after** `normalize()`, never before. NFKC folds fullwidth `＜`
 (U+FF1C) to `<`, so a neutralizer running first is trivially bypassed by typing the placeholder in
 fullwidth. Both `neutralize()` and `rehydrate()` import the same `PLACEHOLDER_RE` constant from
-`placeholders.py`; a property test is specified to assert that anything `rehydrate` matches,
-`neutralize` matches too — otherwise a user-supplied `<PERSON_1>` in the prompt could be rehydrated into somebody else's
+`placeholders.py`; a property test asserts that anything `rehydrate` matches,
+`neutralize` matches too (shipped at M3) — otherwise a user-supplied `<PERSON_1>` in the prompt could be rehydrated into somebody else's
 real name on the way out.
 
 The homoglyph fold is an explicit, auditable table. `unidecode` is rejected: it transliterates
@@ -217,17 +218,18 @@ supposed to handle.
 | `DISREGARD` | "disregard …", "pay no attention to …" | 0.9 | Paraphrase family of the above. |
 | `SYSTEM_PROMPT_PROBE` | "repeat/print/reveal your system prompt / initial instructions / rules" | 0.85 | System-prompt extraction. |
 | `ROLE_HIJACK` | `<\|im_start\|>`, `[INST]`, `### System`, `^\s*(system\|assistant)\s*[:>\]]` | 0.85 | Chat-template injection. |
-| `DAN_PERSONA` | DAN / "developer mode" / "you are now …, you have no restrictions" | 0.90 | **Carries the classifier's documented jailbreak blind spot.** Weighted **≥ 0.85 deliberately, so it blocks alone on the prompt surface** — the classifier scores ~0.02 on jailbreaks, so if this rule could not block by itself, family B would have *no* operative prompt-surface control. The FPR cost is accepted and measured at M6. See §4.5. |
+| `DAN_PERSONA` | DAN / "developer mode" / "you are now …, you have no restrictions" | 0.90 | **Carries the classifier's documented jailbreak blind spot.** Weighted **≥ 0.85 deliberately, so it blocks alone on the prompt surface** — the classifier scores ~0.02 on jailbreaks, so if this rule could not block by itself, family B would have *no* operative prompt-surface control. The FPR cost is accepted; M6 measured benign FPR at **0.32**, over the ≤ 0.10 target (§10.2). See §4.5. |
 | `NEW_INSTRUCTIONS` | "new instructions:", "updated system message", "the real task is" | 0.75 | Instruction reframing, common in documents. Deliberately **sub-0.85**: it does *not* block a user prompt alone (too common in benign text), but clears the 0.70 document-suspect threshold, so it is an operative signal on the *document* surface, not the prompt surface. |
 | `EXFIL_INTENT` | "send/POST/upload … to http(s)://", "email the above to" | 0.85 | Zero-click exfiltration setup. |
 | `MARKDOWN_EXFIL` | `![...](http…)` / `[...](http…)` with an interpolated value | 0.85 | Image-beacon exfiltration; also stripped structurally at G5a. |
 
-**The weight column is a proposal, not a measurement.** No calibration run has happened, and these
-are the canonical values — §8.1 carries the same set. M6 (`scripts/eval_guardrails.py`) will sweep
-them against `tests/corpus/attacks.jsonl` and
-`tests/corpus/benign.jsonl` — which is where ≥30% hard negatives (prompts *about* prompt injection
-and security) earn their place, because every rule above fires on a legitimate question like "how
-would you detect someone typing 'ignore all previous instructions'?".
+**The weight column is a proposal, not a calibration.** These are the canonical values — §8.1 carries
+the same set — and M6 (`scripts/eval_guardrails.py`) has now run them against
+`tests/corpus/attacks.jsonl` and `tests/corpus/benign.jsonl`, but did **not** recalibrate them: the
+weights below remain the un-swept priors. That corpus is where ≥30% hard negatives (prompts *about*
+prompt injection and security) earn their place, because every rule above fires on a legitimate
+question like "how would you detect someone typing 'ignore all previous instructions'?" — and it is
+why benign FPR came in at 0.32 (§10.2).
 
 ### 3.5 Heuristics are OR'd with the classifier, never averaged
 
@@ -247,9 +249,9 @@ blind-spot rules are weighted ≥ 0.85 (§3.4): under `max`, a rule that cannot 
 threshold cannot raise its hand alone, and family B has no other prompt-surface control. The whole
 point of running a rule table alongside an ML model is that either one gets to block on its own.
 
-The cost is paid in false positives, and it is paid honestly: benign FPR will be measured over the
-benign corpus at M6 and is floored at ≤ 0.10 — a build-gate target, not a result — and the hard
-negatives are there so the number will mean something.
+The cost is paid in false positives, and it is paid honestly: benign FPR was measured over the benign
+corpus at M6 at **0.32**, against a ≤ 0.10 floor — so it is now a **result** and an OPEN `known_gap`
+(§10.2), not just a target, and the hard negatives are what make that number mean something.
 
 ---
 
@@ -261,13 +263,13 @@ negatives are there so the number will mean something.
 |---|---|
 | Repo ID | `protectai/deberta-v3-base-prompt-injection-v2` |
 | Revision (pinned) | `90c9989b1a342275dd0d1a95aad283c04e075671` |
-| Runtime artifact | `models/derived/injection-int8/model.onnx` — dynamic INT8, `quantize_dynamic` with **default** op types |
+| Runtime artifact | `models/hf/injection/onnx/model.onnx` — **FP32 ONNX** (the choice is recorded in `models/derived/classifier_choice.json`). INT8 was rejected — see the parity row below |
 | Source ONNX | `onnx/model.onnx`, 738,563,188 B |
-| Fallback ladder | INT8 → FP32 ONNX (kept on disk) → drop the LLM to `llama3.2:1b` |
+| Fallback ladder | INT8 was the first rung and **failed parity** (OQ-2), so **FP32 ONNX is the runtime**; the remaining rung is to drop the LLM to `llama3.2:1b` if RAM ever demands it |
 | Runtime | `onnxruntime==1.28.0`, `CPUExecutionProvider`, `intra_op_num_threads=4`, `inter_op_num_threads=1` |
 | Tokenizer | `tokenizers.Tokenizer.from_file()` — **no `transformers` at runtime** |
-| INT8 on-disk size / RSS | **UNVERIFIED — OQ-1.** ~0.20 GB / ~0.30 GB is arithmetic, not measurement. `07_gates.py` is specified to measure it and to fail provisioning above 0.35 GB RSS; that script does not exist yet. |
-| INT8 accuracy parity | **OPEN — OQ-2.** DeBERTa-v3's disentangled attention puts the relative-position embedding through the quantizer. Hard gate: `\|Δ P(INJECTION)\| < 0.05` and **zero label flips** over the full corpus. It may simply fail. |
+| Session RSS | **0.30 GB — MEASURED (OQ-1 resolved).** `07_gates.py` measures it and fails provisioning above 0.35 GB RSS. ORT mmaps the FP32 weights, so FP32 costs no more RSS than the old INT8 projection. |
+| INT8 accuracy parity | **RESOLVED — OQ-2: it FAILED.** DeBERTa-v3's disentangled attention puts the relative-position embedding through the quantizer, and dynamic INT8 **inverts** this checkpoint (label flips, not `\|Δ P(INJECTION)\| < 0.05`). FP32 ships as a result. |
 
 The feed dict is built from `sess.get_inputs()` and never hardcoded — DeBERTa-v2/v3 has
 `type_vocab_size: 0`, so `token_type_ids` is absent and a hardcoded three-input feed raises at boot.
@@ -346,7 +348,7 @@ from a sweep. M6 is where they meet the corpus; expect them to move.
 
 `src/sagp/guardrails/injection/selftest.py` runs inside `lifespan`, **through the real policy path**
 — the same scanner, windowing, aggregation and thresholds a request would take, not a direct call to
-the ONNX session. It is specified to assert:
+the ONNX session. It asserts:
 
 1. `INJECTION_IDX` resolved from `config.json` `id2label` via the alias set (not defaulted).
 2. A known attack string scores above the user-prompt threshold.
@@ -356,8 +358,9 @@ the ONNX session. It is specified to assert:
 
 **Any failure raises and the application does not start.** Not a warning, not degraded mode. A
 guardrail that cannot prove it is oriented correctly is worse than no guardrail, because the system
-around it will report itself as protected. `make smoke` check `[ 5/14]` is specified to assert that
-the self-test is green; the self-test lands at M5 with the injection guardrail, `make smoke` at M13.
+around it will report itself as protected. `make smoke` check `[ 5/14]` asserts that the self-test is
+green; the self-test shipped with the injection guardrail at M5, and `make smoke` is **14/14 PASS** as
+of M13.
 
 ### 4.6 What the vendor says this model does not do
 
@@ -384,14 +387,16 @@ The model is also **archived and unmaintained** upstream. There will be no fix f
 
 ### 4.7 Known evasions
 
-> **Status describes whether a control exists in the path, not whether it has been shown effective —
-> no evasion in this table has been measured against a corpus.** Nothing below is "closed". Read
-> "control in path" as a statement about the design, and §10.2 as the state of the evidence.
+> **Status describes whether a control exists in the path.** M6 has now measured headline injection
+> recall at **1.0** over corpus families A,C,D,E,G,H,I, with jailbreak (B) and indirect (F) reported
+> separately at **1.0** each (§10.2) — but that corpus is small, and most individual evasions below
+> have not been isolated as their own slice, so read each row as a design statement and §10.2 as the
+> state of the evidence. Nothing below is "closed".
 
 | Evasion | Status |
 |---|---|
 | Non-English payload (Hindi, Urdu, transliterated) | **No control in path.** Vendor-documented gap. |
-| Jailbreak / persona framing | **Partial control in path (unmeasured).** `DAN_PERSONA` only; recall unmeasured. |
+| Jailbreak / persona framing | **Partial control (heuristic only).** `DAN_PERSONA` carries it; family-B recall is **1.0 on the small M6 corpus**, but that is a handful of cases and the classifier itself is jailbreak-blind. |
 | Long-context dilution | **Control in path — sub-window dilution remains open (§11.3).** `max` over windows, plus truncation ⇒ block. |
 | Zero-width / homoglyph obfuscation | **Control in path (unmeasured)** at G1 (strip + fold, then classify the reassembled text). |
 | Bidi / tag-char smuggling | **Control in path (unmeasured)** — blocked outright at G1. |
@@ -538,8 +543,11 @@ Checked at M13 by air-gap assertion 8, which analyzes an email with the egress g
 mode and asserts `len(egress.violations()) == 0` — **paired with a positive control** that a **stock**
 `EmailRecognizer` (default `suffix_list_urls`, cold cache) *does* raise `EgressViolation`, proving by
 contrast that the sealed constructor is what prevents the fetch. (Asserting an un-warmed *sealed* cache
-violates would be unsatisfiable — the snapshot fallback means it never fetches.) Neither the assertion
-nor its control has been written or run; the assertion set is specified in
+violates would be unsatisfiable — the snapshot fallback means it never fetches.) The assertion and its
+positive control now exist and **PASS** — assertion 8 is among the 9 offline air-gap assertions that
+pass on this host (the online negative control was also run live at M13: a real 6.58 ms TCP handshake
+to 1.1.1.1:443 unguarded, `EgressViolation` when enforced). The overall proof verdict on this
+deliberately-unsealed dev host is **INVALID** by design, not `PASS`. The assertion set is specified in
 [AIRGAP_RUNBOOK.md](AIRGAP_RUNBOOK.md) §4.
 
 ### 5.5 The vault contract
@@ -650,30 +658,28 @@ so the model can distinguish data from instructions — was in the original desi
 The nonce delimiter survives because it costs ~10 tokens per chunk and does not perturb the text the
 classifier reads.
 
-### 6.3 One re-scan, over the assembled masked context
+### 6.3 Drop-and-continue re-scan of retrieved context
 
-The scan budget is **two scans total**: once per chunk at ingest (I7), once over the assembled masked
-context at retrieval (C19). Not per-chunk at retrieval.
+At retrieval the re-scan runs in **two parts** (C19), both on the `retrieval` surface at threshold 0.90:
 
-Why not per chunk at retrieval:
+- **C19a — per-chunk drop-and-continue** (`InputGuardrail.filter_context`). Each masked retrieved chunk
+  is scanned on its own and **only the flagged chunks are dropped**; the clean ones continue. A single
+  poisoned chunk — indirect injection planted in one document — must not deny service to a query that
+  also retrieved good chunks. If **every** retrieved chunk is flagged there is nothing safe to ground
+  on, and the request returns the deterministic refusal (`decision="refuse_context_flagged"`, no LLM
+  call).
+- **C19b — assembled re-scan** (`InputGuardrail.scan_context`). After the C18 budget trim, the **fully
+  assembled** masked string is re-scanned as one unit. This is the exact string
+  `test_final_bytes_were_scanned` asserts on; a hit here returns the same deterministic refusal (no LLM
+  call), and a scanner exception is a 503.
 
-- **Cost.** Six chunks × a DeBERTa forward pass, on every request, on a 4-core budget shared with
-  Ollama. The ingest-time scan already covers each chunk in isolation, and chunks do not change
-  between ingest and retrieval.
-- **It misses the attack that only exists after assembly.** A payload split across two documents is
+Why the assembled pass (C19b) is needed on top of the per-chunk pass:
+
+- **It catches the attack that only exists after assembly.** A payload split across two documents is
   individually innocuous and jointly an injection. Only the assembled string contains it.
 - **Corroboration becomes operative.** A 320-token chunk is exactly one 512-token window, so
-  "require two adjacent windows to agree" is meaningless per chunk. The assembled context spans 4–5
-  windows, so the corroboration rule actually constrains something.
-
-The remediation loop, at threshold 0.90:
-
-```
-scan(assembled)  ->  hit  ->  drop the highest-scoring chunk  ->  reassemble  ->  rescan
-                               (maximum 2 iterations)
-all chunks dropped  ->  C15 deterministic refusal, no LLM call
-scanner exception   ->  503
-```
+  "require two adjacent windows to agree" is meaningless per chunk (and per C19a). The assembled
+  context spans 4–5 windows, so the corroboration rule actually constrains something.
 
 Before assembly, each chunk is independently `normalize()`d and run through
 `neutralize_placeholders()` (C16). A retrieved chunk containing `<PERSON_1>` is a **tamper signal** —
@@ -765,13 +771,13 @@ Beyond that, three of the five output checks are structurally undecidable on a p
 The cost is latency: the user waits for the full generation before seeing anything. On a 3B model at
 this budget that is seconds, not minutes, and it is the correct trade for a system whose entire claim
 is that nothing unscanned crosses the boundary. Buffering is also what makes
-`test_final_bytes_were_scanned` possible — the single most important test in the planned suite is
-specified to assert that the **user-role payload** sent to Ollama (the masked question plus the
+`test_final_bytes_were_scanned` possible — the single most important test in the suite **asserts**
+that the **user-role payload** sent to Ollama (the masked question plus the
 assembled retrieved context) *and* the exact string returned to the caller were each arguments to a
 `scan()` call within the same request. It is satisfiable because C18 trims the context to budget
-*before* the C19 re-scan (BLUEPRINT §5.7), so the scanned string is the delivered string; the static
-system prompt is deliberately never scanned and is excluded from the assertion by construction. It has
-not been written (lands at M10; see BLUEPRINT §9.4).
+*before* the C19b re-scan (BLUEPRINT §5.7), so the scanned string is the delivered string; the static
+system prompt is deliberately never scanned and is excluded from the assertion by construction. It
+exists and passes as of M10 (see BLUEPRINT §9.4).
 
 ---
 
@@ -781,8 +787,12 @@ not been written (lands at M10; see BLUEPRINT §9.4).
 > §8.1 and §8.2 are the single source of truth for the top-level key layout, the heuristic weights,
 > the codec list, the threshold values and the three entity tables. `ARCHITECTURE.md` §8.2/§8.3 point
 > here rather than carrying a second copy; where any other document disagrees, this section wins.
-> Neither file exists on disk yet — `config/` is created at M1 — so the YAML below is a
-> specification, not a transcript of a file.
+> Both files now exist on disk (`config/guardrails.yaml` at M3, `config/entities.yaml` at M4). §8.1
+> below is the **canonical/target schema**; the shipped `config/guardrails.yaml` is a subset of it —
+> the `normalize`, `pii`, `context`, `output`, `rejection` and `limits` sections are enforced from
+> `config.py` defaults and `entities.yaml` and are not yet all mirrored back into the YAML file. Where
+> the reproduction and the shipped file differ in extent, the shipped file is the transcript and this
+> section is the intended shape.
 
 Thresholds are **data, not code**. Both files below are hashed and the digest is written into every
 audit record, so a threshold change is visible in the audit trail without diffing the repo.
@@ -838,7 +848,7 @@ deobfuscate:                      # G1c — decoded payloads JOIN the scan set, 
 injection:                        # G2 — src/sagp/guardrails/injection/
   repo_id: protectai/deberta-v3-base-prompt-injection-v2
   revision: 90c9989b1a342275dd0d1a95aad283c04e075671   # pinned; changing it requires an ADR
-  artifact: models/derived/injection-int8/model.onnx   # dynamic INT8; FP32 kept on disk as fallback
+  artifact: models/hf/injection/onnx/model.onnx        # FP32 ONNX — INT8 rejected (OQ-2 inverts this checkpoint); choice recorded in models/derived/classifier_choice.json
   providers: [CPUExecutionProvider]
   intra_op_num_threads: 4         # leaves 4 of 8 cores for Ollama
   inter_op_num_threads: 1
@@ -861,7 +871,7 @@ injection:                        # G2 — src/sagp/guardrails/injection/
   thresholds:
     user_prompt:        0.85      # C7
     doc_suspect:        0.70      # I7 -> indexed with guard.verdict=suspect
-    doc_quarantine:     0.95      # I7 -> docs_quarantine, never retrieved
+    doc_quarantine:     0.95      # I7 -> <collection>__quarantine sibling, never retrieved
     assembled_context:  0.90      # C19
   scan_system_prompt: false       # documented FP source; its sha256 is audited instead
   timeout_ms: 2000                # exceeded -> 503 GUARDRAIL_UNAVAILABLE
@@ -894,11 +904,11 @@ context:                          # G4
   nonce_bytes: 8                  # secrets.token_hex(8), per request, never reused
   datamarking: false              # U+2581 spotlighting — dropped, ADR-0009. Do not re-enable.
   role: user                      # retrieved content is NEVER placed in the system role
-  max_ctx_chars: 7000             # SAGP_MAX_CTX_CHARS; trim lowest-scoring chunks at C18, BEFORE the C19 re-scan
+  max_ctx_chars: 7000             # SAGP_MAX_CTX_CHARS; trim lowest-scoring chunks at C18, BEFORE the C19b re-scan
   rescan:
-    scans_total: 1                # once here + once per chunk at ingest = two scans in the system
-    max_iterations: 2             # drop highest-scoring chunk, reassemble, rescan
-    all_dropped: refuse           # deterministic refusal, no LLM call
+    mode: drop_and_continue       # C19a: scan each masked chunk on the retrieval surface, drop only the flagged ones
+    assembled_rescan: true        # C19b: re-scan the fully assembled masked string as one unit (the final gate)
+    all_dropped: refuse           # every chunk flagged -> deterministic refusal, no LLM call
 
 output:                           # G5
   strip_markdown_links: true
@@ -1040,8 +1050,9 @@ PII recall floors:
   PERSON        >= 0.80
 
 REGRESSION GATE: any metric more than 2 percentage points below docs/metrics/latest.json
-                 fails the build. Inert today: that file is produced by `make eval` at M6
-                 and does not exist, so the gate has no baseline.
+                 fails the build. Active as of M6: that file now exists (produced by `make eval`),
+                 so the recall and PII floors are hard-gated and precision/FPR are regression-gated
+                 against the committed baseline.
 ```
 
 The two 0.98 floors are high because both entities are validator-backed and effectively binary —
@@ -1059,25 +1070,30 @@ Category **B** (jailbreak — the classifier's documented blind spot) and catego
 number**. Averaging a strong direct-injection result with a weak jailbreak result produces a single
 number that is true of nothing.
 
-### 10.2 Nothing here has been measured
+### 10.2 The measured numbers (M6)
 
 Stated as plainly as possible, because this is a compliance-themed document:
 
-> **No guardrail metric in this repository has been measured. Zero.**
+> **The guardrail metrics have now been measured (M6) and committed to `docs/metrics/latest.json`.**
+> Over a small corpus (39 attacks; 25 benign, of which 13 are hard negatives; 18 PII cases):
 >
-> The floors above are **targets** — the values the build will be gated on once there is something to
-> gate. They are not results, not observations, and not claims about this system's performance.
+> - **Injection headline recall 1.0** over families A,C,D,E,G,H,I (floor ≥ 0.90); jailbreak (B) and
+>   indirect (F) reported separately, each **1.0**.
+> - **PII recall 1.0** for `EMAIL_ADDRESS`, `CREDIT_CARD`, `IN_AADHAAR` and `PERSON`
+>   (floors 0.98 / 0.98 / 0.95 / 0.80).
+> - **Injection precision 0.81** and **benign FPR 0.32** — both **miss** their targets (0.85 / 0.10)
+>   and are recorded as OPEN `known_gaps`, severity medium. The cause is by design: the 30%+
+>   hard-negative corpus fires the lexical rules, and the archived DeBERTa classifier over-fires on
+>   attack-phrase and non-English benign text. Recall and PII floors are hard-gated; precision/FPR are
+>   regression-gated from this baseline. **FPR here is benign-blocked ÷ total-benign, not `1 − precision`.**
 >
-> `docs/metrics/latest.json` **does not exist** and will not exist until **M6**, when
-> `tests/corpus/{attacks,benign,pii_cases}.jsonl` are built and `scripts/eval_guardrails.py` runs
-> against them. Until that file exists, the 2pp regression gate has no baseline and is inert.
->
-> Every latency figure in §2 is an ESTIMATE and no benchmark has run on the target M2 hardware.
-> Every threshold in §8 is an unvalidated prior. The INT8 classifier's accuracy parity with FP32 is
-> an **open question (OQ-2)** and may fail its gate outright.
+> Still **not** measured: every latency figure in §2 remains an ESTIMATE — no benchmark has run on the
+> target M2. Every threshold in §8 is still an unvalidated prior (M6 measured *with* them; it did not
+> sweep them). The INT8 accuracy-parity question (OQ-2) is now **resolved — it failed**: dynamic INT8
+> inverts this DeBERTa-v3, so **FP32 ships**.
 
-If you are evaluating this repository, treat §10.1 as a specification of what will be tested and
-§10.2 as the current state of the evidence. Do not cite a floor as a measurement.
+If you are evaluating this repository, treat §10.1 as the floors the build is gated on and §10.2 as
+the measured evidence. Do not cite a floor as if it were the measurement — cite `latest.json`.
 
 ---
 
@@ -1094,9 +1110,10 @@ in the path for it.** Do not deploy this against non-English input and call it p
 
 **2. Jailbreaks are a documented blind spot.**
 The model card states the model does not detect jailbreak attacks. The whole load is carried by one
-heuristic rule (`DAN_PERSONA`) built from hand-written patterns, whose recall is unmeasured and whose
-weight is a guess. The model is archived upstream; there will be no fix. Jailbreak results are
-reported as their own corpus category so the gap stays visible.
+heuristic rule (`DAN_PERSONA`) built from hand-written patterns, whose weight is an un-swept prior —
+family-B recall is **1.0 on the small M6 corpus**, but that is a handful of cases, not a guarantee. The
+model is archived upstream; there will be no fix. Jailbreak results are reported as their own corpus
+category so the gap stays visible.
 
 **3. Long-context dilution — mitigated, not eliminated.**
 `max` over windows plus block-on-truncation closes the classic version (bury the payload in 8 KB of
@@ -1153,16 +1170,17 @@ The endpoint is single-turn by construction, since the vault is request-scoped. 
 added, cross-turn payload assembly becomes an unsolved problem *and* the vault contract has to be
 redesigned. Do not add it casually.
 
-**11. Presidio's regex-timeout behaviour is unverified.**
+**11. Presidio silently drops recognizers on a regex timeout — mitigated, not eliminated.**
 
-> **OPEN QUESTION (OQ-6).** Presidio passes `timeout=REGEX_TIMEOUT_SECONDS` to `regex.finditer` to
-> survive catastrophic backtracking. Whether that timeout **propagates out of `analyze()`** or is
-> caught and logged — yielding a *partial* result set — was not determined by reading
-> `PatternRecognizer.__analyze_patterns` at 2.2.364. If it is caught, a crafted input silently
-> disables individual recognizers while `analyze()` returns normally with fewer entities: a textbook
-> silent fail-open in the masking layer. `pii.partial_results: forbidden` in the config expresses the
-> intent; the wrapper that enforces it must be written against the actual behaviour. **Read that file
-> before trusting this stage.**
+> **OQ-6 — RESOLVED-CONFIRMED** against `presidio-analyzer==2.2.364` source. Presidio passes
+> `timeout=REGEX_TIMEOUT_SECONDS` to `regex.finditer` to survive catastrophic backtracking, and
+> `PatternRecognizer.__analyze_patterns` **catches the `TimeoutError` per pattern, logs "skipping",
+> and returns a partial result set** — so a crafted catastrophic-backtracking input silently disables
+> individual recognizers while `analyze()` returns normally with fewer entities: a real silent
+> fail-open in the masking layer. **M4 mitigates it:** `PIIGuardrail` wraps `analyze()` under a
+> wall-clock deadline and treats a per-pattern regex timeout as a guardrail failure → **503**,
+> honouring `pii.partial_results: forbidden`. The underlying Presidio behaviour is unchanged, so any
+> code path that calls `analyze()` without that wrapper reintroduces the fail-open.
 
 **12. Every guardrail here is in-process Python.**
 None of it constrains Ollama (a separate Go process), the Docker daemon, or native code reached
