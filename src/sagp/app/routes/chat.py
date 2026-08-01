@@ -16,12 +16,15 @@ only thread from an incident back to its bytes (invariant 8).
 
 from __future__ import annotations
 
+import functools
 import time
 from dataclasses import replace
 from datetime import UTC, datetime
 
+import anyio
 from fastapi import APIRouter, Depends, Request
 
+from sagp.app.concurrency import guardrail_limiter
 from sagp.app.deps import Engines, get_engines, get_principal
 from sagp.app.schemas import ChatRequest, ChatResponse
 from sagp.audit.events import AuditEvent
@@ -199,7 +202,7 @@ def run_chat(
 
 
 @router.post("/v1/chat", response_model=ChatResponse)
-def chat(
+async def chat(
     req: ChatRequest,
     request: Request,
     principal: Principal = Depends(get_principal),  # C0
@@ -211,5 +214,14 @@ def chat(
         engines.rate_limiter.check(principal.id)
     if req.messages and len(req.messages) > 1:  # C1
         raise UnsupportedRequest("multi-turn conversations are not supported")
+    # C2–C26 is CPU-bound (Presidio/ONNX). Offload it through the shared
+    # CapacityLimiter(2) (invariant 11) so a burst queues instead of thrashing the
+    # cores and evicting the idle guardrail models. Exceptions propagate to the
+    # SagpError→HTTP handler (still deadline-padded) exactly as before.
     scanned: list[str] = []
-    return run_chat(req.message, req.collection, principal, engines, scanned=scanned)
+    return await anyio.to_thread.run_sync(
+        functools.partial(
+            run_chat, req.message, req.collection, principal, engines, scanned=scanned
+        ),
+        limiter=guardrail_limiter(),
+    )
