@@ -57,6 +57,9 @@ jobs:
       - name: Dependency audit (pip-audit — fails on a known CVE)
         run: make audit-deps PIP_AUDIT=pip-audit
 
+      - name: SAST (bandit over src/sagp — fails on any finding)
+        run: make sast BANDIT=bandit
+
       - name: SBOM (CycloneDX, runtime-only)
         run: make sbom CYCLONEDX=cyclonedx-py PY311=python PYTHON=python
 

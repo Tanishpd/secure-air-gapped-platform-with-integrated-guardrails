@@ -53,6 +53,9 @@ dev = [
   # Supply-chain: CVE gate (`make audit-deps`) + SBOM generation (`make sbom`).
   "pip-audit==2.10.1",
   "cyclonedx-bom==7.3.1",
+  # SAST over shipped code (`make sast`). CodeQL is the deeper option but needs GHAS
+  # (this repo is private); bandit runs anywhere and gates in CI today.
+  "bandit==1.9.4",
 ]
 # thinc-apple-ops (Accelerate BLAS for spaCy) is an opt-in perf extra; kept out of
 # the default closure so M0 installs from wheels without a source build.

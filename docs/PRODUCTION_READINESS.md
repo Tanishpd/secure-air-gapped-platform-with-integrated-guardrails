@@ -42,7 +42,9 @@ the physical seal + disconnect.
 | Egress guard importable | GREEN | `sagp.netguard.egress` |
 | CI configured | GREEN | `.github/workflows/ci.yml` (Actions SHA-pinned, node24) |
 | Dependency CVE scan | GREEN | `make audit-deps` (`pip-audit`) — no known vulnerabilities; CI gate |
+| SAST | GREEN | `make sast` (bandit over `src/sagp`) — no findings; CI gate (deeper CodeQL needs GHAS or a public repo) |
 | SBOM | GREEN | `make sbom` → `sbom.cdx.json` (CycloneDX 1.6, 84 runtime components) |
+| Disclosure policy | GREEN | `SECURITY.md` (scope + threat model); Dependabot watches deps + pinned Actions |
 | App image builds | GREEN | `docker build` → 639 MB, `import sagp` OK (Linux shape; caveats in `Dockerfile`) |
 | Online negative control | GREEN | `verify-online-<gen>.json` blocked every probe |
 
