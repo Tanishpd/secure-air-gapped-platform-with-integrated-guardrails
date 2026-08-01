@@ -129,7 +129,9 @@ def main() -> int:
         c.post(f"{base}/v1/chat", json=inj, headers=hdr)
         c.post(f"{base}/v1/chat", json=ben, headers=hdr)
 
-    reject_load = _burst(inj, n=24, concurrency=8)
+    # concurrency 12 > the default admission gate (8): the surplus should be shed
+    # with a fast 503 SERVICE_BUSY rather than queued — graceful degradation.
+    reject_load = _burst(inj, n=30, concurrency=12)
     benign_load = _burst(ben, n=6, concurrency=3)
 
     stop.set()

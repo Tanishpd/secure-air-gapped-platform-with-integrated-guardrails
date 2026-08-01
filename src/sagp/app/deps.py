@@ -16,6 +16,7 @@ from pathlib import Path
 from fastapi import Header, Request
 from tokenizers import Tokenizer
 
+from sagp.app.concurrency import AdmissionGate
 from sagp.app.ratelimit import RateLimiter
 from sagp.audit.sink import AuditSink
 from sagp.config import Settings
@@ -61,6 +62,7 @@ class Engines:
     chunk_tokenizer: Tokenizer | None = None  # required by the ingest route only
     audit: AuditSink | None = None  # None in unit tests that don't assert on audit
     rate_limiter: RateLimiter | None = None
+    admission_gate: AdmissionGate | None = None  # backpressure; None -> no shedding
     root: Path = field(default_factory=Path.cwd)  # for the quarantine store
 
 
@@ -120,6 +122,7 @@ def assemble_engines(
         chunk_tokenizer=chunk_tokenizer,
         audit=audit,
         rate_limiter=RateLimiter(settings.rate_limit_per_min),
+        admission_gate=AdmissionGate(settings.max_inflight_requests),
         root=root,
     )
 

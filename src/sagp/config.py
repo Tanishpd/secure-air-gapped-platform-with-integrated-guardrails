@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     max_vault_entries: int = Field(2000, gt=0)
     # Per-principal fixed-window rate limit (C0). Over the limit -> 429 RateLimited.
     rate_limit_per_min: int = Field(60, gt=0)
+    # Admission control: max requests in flight (running + queued for the guardrail
+    # CapacityLimiter) before the server sheds load with 503 ServiceBusy. Bounds
+    # worst-case queue latency under a burst; 2 run, the rest queue up to this.
+    max_inflight_requests: int = Field(8, gt=0)
 
     # --- timeouts (BLUEPRINT §12) ------------------------------------------
     timeout_injection_ms: int = Field(2000, gt=0)

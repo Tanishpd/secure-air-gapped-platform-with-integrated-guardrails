@@ -83,6 +83,20 @@ class GuardrailUnavailable(SagpError):
     code = "GUARDRAIL_UNAVAILABLE"
 
 
+class ServiceBusy(SagpError):
+    """Admission control shed this request: too many are already in flight.
+
+    A 503 raised *before* any model work, so a burst degrades gracefully (some
+    fast 503s) instead of every request queueing behind the ``CapacityLimiter(2)``
+    into multi-second latency. Distinct from ``GuardrailUnavailable`` so ops can
+    tell "too busy" from "a guardrail broke". Not a detector reject — not
+    deadline-padded, and it carries no count (not an abuse oracle, invariant 8).
+    """
+
+    status_code = 503
+    code = "SERVICE_BUSY"
+
+
 class ConfigError(SagpError):
     """Invalid configuration detected at startup. The app refuses to boot.
 

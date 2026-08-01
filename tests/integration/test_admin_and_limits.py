@@ -3,6 +3,7 @@ limiting (429)."""
 
 from __future__ import annotations
 
+from sagp.app.concurrency import AdmissionGate
 from sagp.app.ratelimit import RateLimiter
 
 CHAT = {"Authorization": "Bearer tok-chat"}  # chat + ingest, NO pii:reveal
@@ -97,3 +98,18 @@ def test_rate_limit_returns_429(client, chat_engines) -> None:  # type: ignore[n
         assert r.json()["error"]["code"] == "RATE_LIMITED"
     finally:
         chat_engines.rate_limiter = original
+
+
+def test_admission_control_returns_503(client, chat_engines) -> None:  # type: ignore[no-untyped-def]
+    original = chat_engines.admission_gate
+    chat_engines.admission_gate = AdmissionGate(0)  # zero-capacity -> shed everything
+    try:
+        r = client.post(
+            "/v1/chat",
+            json={"message": "How many days of parental leave?", "collection": "handbook"},
+            headers=CHAT,
+        )
+        assert r.status_code == 503
+        assert r.json()["error"]["code"] == "SERVICE_BUSY"
+    finally:
+        chat_engines.admission_gate = original

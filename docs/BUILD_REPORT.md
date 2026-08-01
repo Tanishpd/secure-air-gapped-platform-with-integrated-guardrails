@@ -78,7 +78,7 @@ construction.
 | Online negative control | **6.58 ms** | live TCP handshake to `1.1.1.1:443` unguarded → `EgressViolation` when enforced |
 | App-process RSS (loaded) | **≈0.7 GB** | `make bench`, single-host/idle; ~0.66–0.81 GB across runs — well under the 1.16 GB projection; excludes macOS + Ollama |
 | Single-request latency | **~4–5 s / ~1 s** | benign chat (Ollama-generation-bound) / injection→400; `make bench`, single-request, varies run-to-run, **not load-tested** |
-| Under concurrency (burst) | **~1.4 req/s, p95 ~6 s** | `make bench-load`, conc 8 reject path — CPU-bound, 0 errors, peak RSS ~1.0 GB; benign is Ollama-serialised (~0.35 req/s). Invariant-11 `CapacityLimiter(2)` implemented + verified. Burst, not a soak |
+| Under concurrency (burst) | **sheds load gracefully** | `make bench-load`, conc 12 reject path: `{503: 22, 400: 8}` — 22 shed with a fast 503 (p50 ~29 ms), 8 served, 0 errors, RSS bounded ~0.7–1.0 GB. Invariant-11 `CapacityLimiter(2)` + admission gate (`ServiceBusy`→503) implemented + verified. Burst, not a soak; throughput CPU/Ollama-bound |
 | Test suite / smoke | **262 / 14-of-14** | `make test`, `make smoke` |
 
 ### (ESTIMATE) / PROJECTION / OPEN
