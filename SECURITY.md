@@ -65,6 +65,9 @@ that difference is in scope.)
 ## Automated hardening in CI
 
 Every push runs `make audit-deps` (`pip-audit` CVE gate) and `make sast` (bandit
-over `src/sagp`); dependencies and pinned Actions are watched by Dependabot. Deeper
-SAST via **CodeQL** is available if the repository enables GitHub Advanced Security
-or is made public — this repo is private, so bandit is the SAST that gates today.
+over `src/sagp`); dependencies and pinned Actions are watched by Dependabot. A
+**dormant CodeQL workflow** (`.github/workflows/codeql.yml`) is committed and
+**auto-activates the moment the repo is made public** — CodeQL code scanning is free
+for public repos, so no settings change is needed; while private its job is gated on
+repository visibility and every run is a clean *skipped*, never a failure. Until
+then, bandit is the SAST that gates every push.

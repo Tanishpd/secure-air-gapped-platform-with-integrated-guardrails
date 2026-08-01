@@ -1,0 +1,47 @@
+name: codeql
+
+# Deep static analysis via CodeQL — DORMANT while the repo is private, AUTO-ACTIVATING
+# the moment it is made public.
+#
+# CodeQL code scanning is free for public repositories; on a private repo it requires
+# GitHub Advanced Security. The `analyze` job is therefore gated on repository
+# visibility: while private every run is a clean **skipped** (never a failure); the
+# first push to `main` after the repo is made public runs it automatically, as does
+# the weekly schedule. No settings change needed — just flip the repo to public.
+#
+# Until then, `make sast` (bandit) is the SAST that gates CI on every push (ci.yml).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "27 4 * * 1" # weekly, Monday 04:27 UTC
+
+permissions:
+  contents: read
+  security-events: write # required to upload results to code scanning
+
+jobs:
+  analyze:
+    name: analyze (python)
+    # Gate: only run where CodeQL is available for free (public repos). While the
+    # repo is private this evaluates false and the job is SKIPPED, not failed.
+    if: github.event.repository.visibility == 'public'
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned to commit SHAs (supply-chain), tags in comments — as ci.yml.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@dfbc6164313353db46c80e2fcfd38820bd2c3c46 # v3.37.4
+        with:
+          languages: python
+          # Broadest first-party suite (security + maintainability).
+          queries: security-and-quality
+
+      # Python is interpreted — no build step; analyze directly.
+      - name: Analyze
+        uses: github/codeql-action/analyze@dfbc6164313353db46c80e2fcfd38820bd2c3c46 # v3.37.4
+        with:
+          category: "/language:python"
