@@ -33,8 +33,9 @@ LEDGER_REL = EVIDENCE_DIR_REL / "ledger.jsonl"
 PRIVKEY_REL = Path(".airgap") / "keys" / "manifest_ed25519"
 
 # --- the four verdicts (invariant 13) -----------------------------------------
-PASS = "PASS"
-PASS_WITH_OPEN_HIGH_SEVERITY_GAPS = "PASS_WITH_OPEN_HIGH_SEVERITY_GAPS"
+# These are verdict tokens, not credentials (bandit B105 false positives).
+PASS = "PASS"  # nosec B105
+PASS_WITH_OPEN_HIGH_SEVERITY_GAPS = "PASS_WITH_OPEN_HIGH_SEVERITY_GAPS"  # nosec B105
 INVALID = "INVALID"  # an invalidating condition fired — cannot conclude
 FAIL = "FAIL"  # a control that should have held provably leaked
 

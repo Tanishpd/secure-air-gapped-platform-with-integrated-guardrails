@@ -16,7 +16,7 @@ PYTEST  := "$(VENV)/bin/pytest"
 
 .PHONY: help doctor venvs install install-provision lint format typecheck test test-ci test-all test-e2e clean \
         provision verify-manifest audit-verify eval eval-candidate production-preflight samples \
-        audit-deps sbom \
+        audit-deps sbom sast \
         verify verify-online evidence proof smoke \
         seal unseal serve airgap-status spike-docker seal-pf unseal-pf \
         ingest query up ollama-up ollama-down
@@ -91,11 +91,15 @@ production-preflight:  ## Honest production go/no-go: automated gates + human ch
 
 PIP_AUDIT ?= "$(VENV)/bin/pip-audit"
 CYCLONEDX ?= "$(VENV)/bin/cyclonedx-py"
+BANDIT ?= "$(VENV)/bin/bandit"
 # Known-accepted advisories (id[,id...]) — none today; append with justification in the PR.
 AUDIT_IGNORE ?=
 
 audit-deps:  ## CVE-scan the installed environment (pip-audit). Fails on a known vulnerability.
 	$(PIP_AUDIT) $(foreach v,$(AUDIT_IGNORE),--ignore-vuln $(v))
+
+sast:  ## Static security analysis of shipped code (bandit over src/sagp). Fails on any finding.
+	$(BANDIT) -q -r src/sagp
 
 sbom:  ## Generate a RUNTIME-ONLY CycloneDX SBOM -> sbom.cdx.json (clean venv, no dev/test tools)
 	rm -rf .sbom-venv

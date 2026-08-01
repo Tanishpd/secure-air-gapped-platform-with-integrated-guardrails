@@ -23,7 +23,7 @@ of outcome→ok lives in ``verify_airgap.py``, not here: this module reports fac
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404
 import sys
 import textwrap
 from dataclasses import dataclass
@@ -166,7 +166,8 @@ def _child_source(probe: Probe) -> str:
 
 def run_probe(probe: Probe, *, timeout: float = 40.0) -> ProbeResult:
     """Execute ``probe`` in a fresh guarded interpreter and report the facts."""
-    proc = subprocess.run(
+    # Fixed argv (our interpreter + our source), no shell, no user input.
+    proc = subprocess.run(  # nosec B603
         [sys.executable, "-c", _child_source(probe)],
         capture_output=True,
         text=True,

@@ -1,0 +1,32 @@
+# Keep dependencies and the SHA-pinned Actions current (complements the pip-audit CVE
+# gate). NOTE: runtime dependency bumps are NOT merge-and-go — the runtime venv is
+# provisioned through a one-way door (make unseal -> provision -> verify-online ->
+# seal), so a `production` PR here is a signal to run that flow, not a fast-forward.
+version: 2
+updates:
+  # GitHub Actions: bumps the pinned commit SHAs (keeps supply-chain pins fresh).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Python: pyproject dependencies + the [dev] toolchain.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      # Grouped so review is per-class: runtime bumps imply a re-provision; dev/tool
+      # bumps (ruff, mypy, pytest, pip-audit, cyclonedx, bandit) are ordinary.
+      runtime-deps:
+        dependency-type: "production"
+      dev-tools:
+        dependency-type: "development"

@@ -129,6 +129,16 @@ def _automated() -> list[str]:
         )
     )
 
+    # Disclosure policy + dependency automation.
+    have_sec = (ROOT / "SECURITY.md").is_file() and (ROOT / ".github/dependabot.yml").is_file()
+    oks.append(
+        _line(
+            "GREEN" if have_sec else "RED",
+            "disclosure policy + deps bot",
+            "SECURITY.md + dependabot.yml",
+        )
+    )
+
     # The online negative control (paired with the offline proof) blocked every probe.
     try:
         vo = sorted((ROOT / "evidence").glob("verify-online-*.json"))
@@ -144,7 +154,7 @@ def _automated() -> list[str]:
 def _gates_to_run() -> None:
     print("\nRUN — existing gates to execute (some cannot PASS until sealed):")
     _line("RUN", "make lint typecheck test-ci", "code+types+model-free tests (also CI, green)")
-    _line("RUN", "make audit-deps / sbom", "pip-audit CVE gate + CycloneDX SBOM (also CI)")
+    _line("RUN", "make audit-deps / sbom / sast", "pip-audit CVE + SBOM + bandit SAST (also CI)")
     _line("RUN", "make test-all / test-e2e", "full suite w/ real models + Ollama")
     _line("RUN", "make eval", "regenerate + gate metrics vs baseline")
     _line("RUN", "make smoke", "14 numbered end-to-end checks")
