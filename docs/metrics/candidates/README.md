@@ -26,16 +26,40 @@ Accuracy (recall/precision/FPR) is comparable across candidates here; deployed R
 and latency are **not** (torch ≠ the ONNX session), so `size_proxy` reports parameter
 count only — real RSS needs the ONNX export + `07_gates` measurement.
 
-## Results so far
+## Results — the ungated landscape, swept
 
-| candidate | recall | precision | benign FPR | verdict |
-|---|---|---|---|---|
-| baseline (protectai v2) | 1.00 | 0.854 | 0.24 | — |
-| `deepset/deberta-v3-base-injection` (v1 ancestor) | 1.00 | 0.761 | **0.44** | `NO_IMPROVEMENT` |
+| candidate | params (M) | headline recall | precision | benign FPR | recall regressions | verdict |
+|---|---|---|---|---|---|---|
+| **baseline** (protectai v2) | 184 | **1.000** | 0.854 | 0.24 | — | — |
+| `deepset/deberta-v3-base-injection` (v1) | 184 | 1.000 | 0.761 | 0.44 | none | `NO_IMPROVEMENT` |
+| `testsavantai/…-small-v0` | 29 | 0.903 | 0.909 | 0.12 | A, C, B, F | `REJECT_RECALL_REGRESSION` |
+| `testsavantai/…-base-v0` | 67 | 0.968 | 0.861 | 0.20 | D, B, F | `REJECT_RECALL_REGRESSION` |
+| `testsavantai/…-large-v0` | 184 | 0.968 | 0.944 | **0.08** | A, F | `REJECT_RECALL_REGRESSION` |
+| `jackhhao/jailbreak-classifier` | 110 | 0.774 | 0.900 | 0.12 | C, D, E, B, F | `REJECT_RECALL_REGRESSION` |
 
-The v1 ancestor holds recall but nearly **doubles** the false-positive rate — data
-quantifying why v2 is the baseline, and a live demonstration of the gate declining a
-non-improving swap.
+**The finding: on this corpus, every ungated model that improves the FPR ceiling does
+so by trading away attack recall.** Four of five would have looked like an upgrade on
+the headline FPR/precision numbers — and every one of those silently drops attacks the
+baseline catches:
+
+- `testsavantai-large` is the sharpest lesson. It **meets the 0.10 FPR target (0.08)**
+  and lifts precision to 0.94 — the numbers you would swap for. But it misses **20% of
+  direct (family A)** and **50% of indirect, document-planted (family F)** attacks.
+  Family F is the highest-value RAG threat. Blind-swapping to hit the FPR number would
+  have halved indirect-injection detection.
+- `testsavantai-small` (6× smaller, tempting for the 8 GB budget) improves both ceiling
+  metrics but misses **40% of family A** and **50% of jailbreaks (B)**.
+- `jackhhao/jailbreak-classifier` — a *jailbreak*-named model — scores family B at 0.75,
+  worse than the baseline's 1.0, and craters headline recall to 0.77.
+
+The baseline's recall-1.0 is bought with a higher FPR; the ungated alternatives make
+the opposite trade. **No ungated candidate offers a strictly-better point on the
+recall/FPR frontier** — which is exactly why the swap needs a genuinely stronger,
+multilingual model rather than a lateral move. Not evaluated (`gated=auto`, need a
+token): `Epivolis/Hyperion`, `qualifire/prompt-injection-sentinel`.
+
+Every REJECT here is the gate (`candidate_gate.py`) doing its one job: refusing a model
+that would have shipped a security regression disguised as a metrics win.
 
 ## The real target is blocked on you
 
