@@ -39,8 +39,9 @@ The demo narrative, in six steps:
    (`SAGP_QDRANT_MODE=embedded`) is the **default runtime backend**, chosen on RAM grounds
    (6.75 GB projected for the embedded profile vs 7.60 GB for the demo profile, against an 8 GB
    ceiling); the pinned `qdrant/qdrant:v1.18.3-unprivileged` container under `PROFILE=demo` is the
-   **demonstration and proof path**, the one the network-isolation harness targets. The demo path's
-   isolation properties are **untested** until `make spike-docker` resolves OQ-4 and OQ-5.
+   **demonstration and proof path**, the one the network-isolation harness targets. The demo path is
+   **NOT network-isolated by compose options** — `make spike-docker` (run 2026-08-01) resolved OQ-4 and
+   OQ-5 negatively; its egress control comes from `make seal-pf` + loopback, not Docker networking.
 5. **Ask a question containing an email address** and get a grounded, cited answer — where the prompt
    that actually reached Ollama contained `<EMAIL_ADDRESS_1>` and not the real address. The mapping
    lives in a request-scoped, in-memory vault that is cleared in a `finally` block and never persisted.
@@ -215,7 +216,7 @@ make doctor          # hard-fails: free disk < 25 GB (currently 5.9 GB — free 
 make venvs           # .venv and .venv-provision from ~/.local/bin/python3.11
 make lock            # resolve BOTH closures ONCE -> requirements.*.lock with --generate-hashes
 make install         # pip install --require-hashes -r requirements.runtime.lock -e .
-make spike-docker    # ~10 min: resolves OQ-4 / OQ-5 empirically -> ADR-0002
+make spike-docker    # ~10 min: RUN 2026-08-01, resolved OQ-4 / OQ-5 -> ADR-0002 (Accepted)
 ```
 
 ### Phase 1 — PROVISION (online, **one-way door**)
@@ -386,13 +387,15 @@ questions. `SAGP_QDRANT_MODE=embedded` is the **default runtime backend**, chose
 6.75 GB projected for the embedded profile against 7.60 GB for the demo profile, under an 8 GB
 ceiling. `PROFILE=demo` (Docker, `qdrant/qdrant:v1.18.3-unprivileged`) is the **demonstration and
 proof path**: it is the network-isolation boundary this project exists to show, and it is what the
-proof harness targets, at a projected cost of ~0.85 GB of headroom. Its isolation properties are
-**untested** — [ADR-0002](docs/adr/0002-qdrant-deployment-mode.md) is
-`Proposed — blocked on the Phase-0 spike`, and **OQ-4**
-(can `internal: true` coexist with a published `127.0.0.1:6333` port on Docker Desktop?) and **OQ-5**
-(does `enable_ip_masquerade: "false"` actually block egress on Docker Desktop, where containers
-egress through a userland VM proxy rather than a host MASQUERADE rule?) are both open until
-`make spike-docker` runs. Until then the word for the Docker path is *untested*, not *isolated*.
+proof harness targets, at a projected cost of ~0.85 GB of headroom. It is **NOT network-isolated by
+compose options** — [ADR-0002](docs/adr/0002-qdrant-deployment-mode.md) is now `Accepted`, and the
+Phase-0 spike (`make spike-docker`, run 2026-08-01) resolved **OQ-4** (`internal: true` cannot coexist
+with an app-reachable published `127.0.0.1:6333` port on Docker Desktop — the host cannot reach it, so a
+non-internal bridge is used) and **OQ-5** (`enable_ip_masquerade: "false"` does **not** block egress on
+Docker Desktop, where containers egress through a userland VM proxy rather than a host MASQUERADE rule;
+DNS always leaks via the embedded resolver) — both negatively. The Docker path's egress control comes
+from `make seal-pf` + loopback binding, not Docker networking; the word for it is *not isolated by compose
+options*, never *isolated*.
 
 Thresholds are data, not code: they live in `config/guardrails.yaml` and `config/entities.yaml`, and
 the hash of that configuration goes into every audit record. All thresholds are validated
@@ -415,7 +418,7 @@ the hash of that configuration goes into every audit record. All thresholds are 
 | [docs/EVALUATION.md](docs/EVALUATION.md) | You want to know how the corpora were built and how the metric floors were chosen | written |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Day 2: key custody, rotation, retention, ledger-head export, backup and restore | written |
 | `docs/metrics/latest.json` | You need the metrics baseline; regressions >2pp fail the build | **exists** — produced by `make eval` at M6 (injection recall 1.0, PII recall 1.0; precision 0.81 / FPR 0.32 open gaps) |
-| [docs/adr/0001..0009](docs/adr/) | You want to know *why* a contested choice went the way it did | written (0002 is `Proposed`, blocked on the Phase-0 spike) |
+| [docs/adr/0001..0009](docs/adr/) | You want to know *why* a contested choice went the way it did | written (0002 is `Accepted` — the Phase-0 spike ran 2026-08-01) |
 | [CLAUDE.md](CLAUDE.md) | You are an agent editing this repo — 13 non-negotiable invariants | written |
 
 ---

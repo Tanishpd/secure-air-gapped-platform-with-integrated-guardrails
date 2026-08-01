@@ -228,19 +228,29 @@ are not.
 measured M13 pass. Measurements replace estimates, and every marker in these documents is removed only
 when a number behind it has actually been observed.
 
-### 19. `docker exec` egress tests measure the Linux VM, not macOS
+### 19. The Docker path is NOT network-isolated by compose options
 
-**Wrongly inferred:** "The container cannot reach the internet on this host."
-**Actually true:** Whether `enable_ip_masquerade: "false"` blocks egress on Docker Desktop is
-**untested** (**OQ-5**) — the daemon is not running, and Docker Desktop containers egress through a
-userland VM proxy rather than a host MASQUERADE rule. Whether `internal: true` can coexist with a
-published loopback port is likewise untested (**OQ-4**). Do not report either as PASS on the strength
-of a documentation page.
-**To close it:** The Phase-0 spike, `make spike-docker`, whose result is to be recorded in ADR-0002 —
-which stays **Proposed — blocked on that spike** until it runs — plus the second prober attached to
-`sagp_vec_noegress`, the network Qdrant actually runs on. Only that prober's result may be cited for
-the production path. Until the spike runs, the Docker path's isolation is **untested**, never
-"isolated".
+**Wrongly inferred:** "The `docker-compose.yml` network settings isolate the container, so it cannot
+reach the internet on this host."
+**Actually true:** The Phase-0 spike (`make spike-docker`, run 2026-08-01 on Docker Desktop 29.5.3)
+resolved OQ-4 and OQ-5 — both **negatively**. **OQ-4:** with `internal: true`, a published `127.0.0.1`
+port is accepted and the container runs, but the macOS **host cannot reach it** (http_code 000); since
+the sagp app runs on the host, `internal: true` and an app-reachable Qdrant are **mutually exclusive**,
+so the compose file uses a **non-internal** bridge. **OQ-5:** `enable_ip_masquerade: "false"` does **not**
+block egress — on an internal network raw TCP to `1.1.1.1` is blocked but DNS still resolves via the
+embedded resolver, and on the reachable (non-internal) network the compose file must use, egress is
+**fully open** (TCP and DNS both reach out) because Docker Desktop containers egress through a userland VM
+proxy rather than a host MASQUERADE rule. You cannot get both an app-reachable Qdrant and an
+egress-blocked container from compose network options alone. This is a **genuine limitation** — arguably a
+worse one than the old "untested", because it is now known that compose options do not isolate. `docker
+exec` probes measure Docker's Linux VM, not macOS, and `.Internal == true` is not the configuration
+actually shipped. Do not report the Docker path as "isolated". Evidence: `evidence/spike-docker.json`
+(gitignored); ADR-0002 is now **Accepted**.
+**To close it:** Egress control on the Docker path comes from the host `pf` anchor (`make seal-pf`) plus
+loopback binding, **not** from `internal:`/`masquerade` — and even that is host-UID TCP/UDP only, so the
+DNS leak via the embedded resolver and Docker's root-owned VM interface remain outside its reach. The
+embedded profile (`SAGP_QDRANT_MODE=embedded`, the default) sidesteps this entirely by not running a
+container. For the demo/proof path, the residual DNS-resolution leak is unclosed.
 
 ### 20. This is not a substitute for a regulated enclave
 

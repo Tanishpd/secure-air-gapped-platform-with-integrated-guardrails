@@ -17,7 +17,7 @@ PYTEST  := "$(VENV)/bin/pytest"
 .PHONY: help doctor venvs install install-provision lint format typecheck test clean \
         provision verify-manifest audit-verify eval samples \
         verify verify-online evidence proof smoke \
-        seal unseal serve airgap-status
+        seal unseal serve airgap-status spike-docker
 
 help:  ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -109,6 +109,9 @@ serve:  ## The only supported launch path: bin/sagp-serve -> uvicorn --workers 1
 
 airgap-status:  ## Print phase, seal_generation, unseal count
 	$(PYTHON) -m sagp.netguard.phase status
+
+spike-docker:  ## Online, Docker running: resolve OQ-4/OQ-5 empirically -> ADR-0002
+	bash scripts/spike_docker.sh
 
 clean:  ## Remove venvs and caches
 	rm -rf "$(VENV)" "$(VENV_PROVISION)" .pytest_cache .ruff_cache .mypy_cache
