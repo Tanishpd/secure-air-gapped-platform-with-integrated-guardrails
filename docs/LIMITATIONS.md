@@ -207,10 +207,15 @@ hashes against an independently obtained source before the first install rather 
 ### 17. Denial of service by resource exhaustion is largely unmitigated
 
 **Wrongly inferred:** "Rate limiting protects availability."
-**Actually true:** On 8 GB, a concurrent burst OOMs before the rate limits bite. One uvicorn worker
-plus `anyio.CapacityLimiter(2)` is the whole defence.
+**Actually true:** One uvicorn worker plus `anyio.CapacityLimiter(2)` is the whole defence — now
+**implemented and verified to cap at 2** (it was spec-only until the load-bench pass). `make bench-load`
+measured a burst of 8: it stayed **bounded** — ~1.0 GB peak RSS, **0 errors**, no OOM — but the reject
+path is **CPU-bound** (~1.4 req/s, p95 ~6 s) and benign is Ollama-serialised (~0.35 req/s). So a *small*
+burst degrades latency rather than OOMing; a **large** burst on 8 GB is only partially mitigated and is
+**not load-tested at scale** — the limiter bounds the thread/RAM explosion the default pool would cause,
+but there is no admission control ahead of the model runtime.
 **To close it:** More memory, admission control ahead of the model runtime, per-principal queueing
-with backpressure, and a hard cgroup/`ulimit` boundary around each component.
+with backpressure, a hard cgroup/`ulimit` boundary around each component, and a real load/soak test.
 
 ### 18. The guardrail metrics are measured; latency and RAM are not
 

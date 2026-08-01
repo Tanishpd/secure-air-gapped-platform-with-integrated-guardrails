@@ -14,10 +14,13 @@ not the chat detector oracle invariant 8 forbids on the rejection surface.
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 
+import anyio
 from fastapi import APIRouter, Depends, Request
 
+from sagp.app.concurrency import guardrail_limiter
 from sagp.app.deps import Engines, get_engines, get_principal
 from sagp.app.schemas import IngestRequest, IngestResponse
 from sagp.errors import AuthError, GuardrailUnavailable, InputTooLarge, UnsupportedRequest
@@ -73,11 +76,16 @@ def run_ingest(req: IngestRequest, engines: Engines) -> IngestResponse:
 
 
 @router.post("/v1/ingest", response_model=IngestResponse)
-def ingest(
+async def ingest(
     req: IngestRequest,
     request: Request,
     principal: Principal = Depends(get_principal),  # C0
 ) -> IngestResponse:
     if not principal.has_scope("ingest"):
         raise AuthError("token lacks the ingest scope")
-    return run_ingest(req, get_engines(request))
+    # Embedding + per-chunk scanning is CPU-bound: offload through the shared
+    # CapacityLimiter(2) (invariant 11), same as the chat path.
+    return await anyio.to_thread.run_sync(
+        functools.partial(run_ingest, req, get_engines(request)),
+        limiter=guardrail_limiter(),
+    )

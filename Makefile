@@ -117,6 +117,9 @@ spike-docker:  ## Online, Docker running: resolve OQ-4/OQ-5 empirically -> ADR-0
 bench:  ## Measure app-process RSS + per-request latency (single-host, idle; not a load test)
 	$(PYTHON) scripts/bench.py
 
+bench-load:  ## Measure the HTTP path under concurrency (burst; live uvicorn)
+	$(PYTHON) scripts/bench_load.py
+
 seal-pf:  ## OPTIONAL, sudo, HOST-WIDE: pf blocks all non-loopback egress (dry-run parsed first)
 	bash scripts/seal_pf.sh
 
