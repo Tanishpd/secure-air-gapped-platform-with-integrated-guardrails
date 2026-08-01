@@ -204,18 +204,19 @@ install, not the first. Trust-on-first-use is the actual model.
 **To close it:** Verify upstream signatures at fetch time, generate and sign an SBOM, and cross-check
 hashes against an independently obtained source before the first install rather than after it.
 
-### 17. Denial of service by resource exhaustion is largely unmitigated
+### 17. Denial of service by resource exhaustion is partially mitigated (bounded + load-shedding), not solved
 
 **Wrongly inferred:** "Rate limiting protects availability."
-**Actually true:** One uvicorn worker plus `anyio.CapacityLimiter(2)` is the whole defence — now
-**implemented and verified to cap at 2** (it was spec-only until the load-bench pass). `make bench-load`
-measured a burst of 8: it stayed **bounded** — ~1.0 GB peak RSS, **0 errors**, no OOM — but the reject
-path is **CPU-bound** (~1.4 req/s, p95 ~6 s) and benign is Ollama-serialised (~0.35 req/s). So a *small*
-burst degrades latency rather than OOMing; a **large** burst on 8 GB is only partially mitigated and is
-**not load-tested at scale** — the limiter bounds the thread/RAM explosion the default pool would cause,
-but there is no admission control ahead of the model runtime.
-**To close it:** More memory, admission control ahead of the model runtime, per-principal queueing
-with backpressure, a hard cgroup/`ulimit` boundary around each component, and a real load/soak test.
+**Actually true:** Three controls now stack: one uvicorn worker, `anyio.CapacityLimiter(2)`
+(**implemented and verified to cap at 2** — it was spec-only until the load-bench pass), and an
+**admission gate** that sheds load with a fast 503 `ServiceBusy` once `SAGP_MAX_INFLIGHT_REQUESTS` (default
+8) are in flight. Measured with `make bench-load`: a burst of 12 rejects was served **gracefully** — 8
+processed, **22 shed with a fast 503 (p50 ~29 ms)** rather than all queueing, peak RSS bounded ~0.7–1.0 GB,
+**0 errors, no OOM**. The reject path is still **CPU-bound** (~1.4 req/s) and benign is Ollama-serialised
+(~0.35 req/s), so throughput is low. This is **graceful degradation, not capacity**: the box protects
+itself, but a client under load gets 503s, and none of this is a soak test or tuned for a real workload.
+**To close it:** more memory/cores or horizontal scale, per-principal queueing with backpressure (the gate
+is global today), a hard cgroup/`ulimit` boundary around each component, and a real load/soak test.
 
 ### 18. The guardrail metrics are measured; latency and RAM are not
 

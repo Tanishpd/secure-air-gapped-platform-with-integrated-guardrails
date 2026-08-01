@@ -214,14 +214,24 @@ async def chat(
         engines.rate_limiter.check(principal.id)
     if req.messages and len(req.messages) > 1:  # C1
         raise UnsupportedRequest("multi-turn conversations are not supported")
-    # C2–C26 is CPU-bound (Presidio/ONNX). Offload it through the shared
-    # CapacityLimiter(2) (invariant 11) so a burst queues instead of thrashing the
-    # cores and evicting the idle guardrail models. Exceptions propagate to the
-    # SagpError→HTTP handler (still deadline-padded) exactly as before.
-    scanned: list[str] = []
-    return await anyio.to_thread.run_sync(
-        functools.partial(
-            run_chat, req.message, req.collection, principal, engines, scanned=scanned
-        ),
-        limiter=guardrail_limiter(),
-    )
+    # C0 backpressure: shed load with a fast 503 if too many are already in flight,
+    # rather than letting the burst queue behind the CapacityLimiter into multi-
+    # second latency. Acquire only around the expensive offload, after the cheap
+    # scope/rate/multi-turn checks (a rejected request must not consume a slot).
+    if engines.admission_gate is not None:
+        engines.admission_gate.acquire()  # -> 503 ServiceBusy if saturated
+    try:
+        # C2–C26 is CPU-bound (Presidio/ONNX). Offload it through the shared
+        # CapacityLimiter(2) (invariant 11) so a burst queues instead of thrashing
+        # the cores and evicting the idle guardrail models. Exceptions propagate to
+        # the SagpError→HTTP handler (still deadline-padded) exactly as before.
+        scanned: list[str] = []
+        return await anyio.to_thread.run_sync(
+            functools.partial(
+                run_chat, req.message, req.collection, principal, engines, scanned=scanned
+            ),
+            limiter=guardrail_limiter(),
+        )
+    finally:
+        if engines.admission_gate is not None:
+            engines.admission_gate.release()

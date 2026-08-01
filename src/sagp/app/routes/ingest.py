@@ -83,9 +83,16 @@ async def ingest(
 ) -> IngestResponse:
     if not principal.has_scope("ingest"):
         raise AuthError("token lacks the ingest scope")
-    # Embedding + per-chunk scanning is CPU-bound: offload through the shared
-    # CapacityLimiter(2) (invariant 11), same as the chat path.
-    return await anyio.to_thread.run_sync(
-        functools.partial(run_ingest, req, get_engines(request)),
-        limiter=guardrail_limiter(),
-    )
+    engines = get_engines(request)
+    if engines.admission_gate is not None:  # C0 backpressure -> 503 ServiceBusy if saturated
+        engines.admission_gate.acquire()
+    try:
+        # Embedding + per-chunk scanning is CPU-bound: offload through the shared
+        # CapacityLimiter(2) (invariant 11), same as the chat path.
+        return await anyio.to_thread.run_sync(
+            functools.partial(run_ingest, req, engines),
+            limiter=guardrail_limiter(),
+        )
+    finally:
+        if engines.admission_gate is not None:
+            engines.admission_gate.release()

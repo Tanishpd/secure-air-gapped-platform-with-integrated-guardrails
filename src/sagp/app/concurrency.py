@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import anyio
 
+from sagp.errors import ServiceBusy
+
 # Created at import (anyio binds it to a loop lazily, on first use). One instance,
 # shared by every request, is the whole point — a per-request limiter caps nothing.
 _GUARDRAIL_LIMITER = anyio.CapacityLimiter(2)
@@ -28,3 +30,35 @@ _GUARDRAIL_LIMITER = anyio.CapacityLimiter(2)
 
 def guardrail_limiter() -> anyio.CapacityLimiter:
     return _GUARDRAIL_LIMITER
+
+
+class AdmissionGate:
+    """Bounded in-flight admission control (backpressure).
+
+    The ``CapacityLimiter(2)`` caps how many guardrail evaluations RUN at once;
+    this caps how many may be *waiting* for it before the server sheds load. Under
+    a burst, the first few requests queue and the rest get a fast **503
+    ``ServiceBusy``** instead of every request degrading to multi-second latency
+    (measured with ``make bench-load``). Graceful degradation, not collapse.
+
+    Counter lives in the single event loop, so ``acquire``/``release`` need no lock
+    — they are called synchronously in the async route, never from the worker
+    threads. Always release in a ``finally``.
+    """
+
+    def __init__(self, max_in_flight: int) -> None:
+        self._max = max_in_flight
+        self._in_flight = 0
+
+    def acquire(self) -> None:
+        """Admit one request or raise ``ServiceBusy`` (503) if at capacity."""
+        if self._in_flight >= self._max:
+            raise ServiceBusy("server at capacity; retry shortly")
+        self._in_flight += 1
+
+    def release(self) -> None:
+        self._in_flight = max(0, self._in_flight - 1)
+
+    @property
+    def in_flight(self) -> int:
+        return self._in_flight
