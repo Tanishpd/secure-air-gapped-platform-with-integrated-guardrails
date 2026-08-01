@@ -68,6 +68,24 @@ was measured and it fails the same gate, so the Meta licence + PII form is not w
 network is merely absent or genuinely blocked, which is why a `PASS` is only meaningful
 after the physical disconnect (H1).
 
+### Last full gate run — 2026-08-02 (this provisioned dev host)
+
+Every runnable gate executed; results captured, not asserted:
+
+| gate | result |
+|---|---|
+| `make lint` / `typecheck` | green (126 files formatted; mypy strict, 72 files) |
+| `make test-all` | **277 passed** in 2:11 (real ONNX + spaCy + Ollama) |
+| `make eval` | recall 1.0, precision 0.854, FPR 0.24, PII EMAIL/CARD/AADHAAR/PERSON all 1.0 (baseline reproduced) |
+| `make smoke` | **14/14 PASS** (guard armed · manifest verified · PII masked pre-LLM · injection→400 · audit chain intact) |
+| `make audit-verify` | chain OK, 146 records |
+| `make bench` | app-process RSS 795 MB, build 2.7 s, benign chat 4.2 s (Ollama-bound), injection→400 960 ms — single-host/idle, not load-tested |
+| `make verify` | 9/9 assertions PASS, verdict **INVALID** — correct: phase=PROVISION + non-loopback dev listeners (only H1 changes this) |
+| `make production-preflight` | **NOT READY** — hard gates green, 1 tracked FPR GAP, RUN+HUMAN gates open |
+
+Every automated gate is green; the only non-green verdicts (`verify` INVALID, `preflight`
+NOT READY) are the honest consequence of an unsealed dev host, and only H1–H7 change them.
+
 ## 3. Human / external — the real remaining distance
 
 None of these can be automated from inside the repo. Each names its owner-action.

@@ -14,7 +14,7 @@ RUFF    := "$(VENV)/bin/ruff"
 MYPY    := "$(VENV)/bin/mypy"
 PYTEST  := "$(VENV)/bin/pytest"
 
-.PHONY: help doctor venvs install install-provision lint format typecheck test test-ci clean \
+.PHONY: help doctor venvs install install-provision lint format typecheck test test-ci test-all test-e2e clean \
         provision verify-manifest audit-verify eval eval-candidate production-preflight samples \
         verify verify-online evidence proof smoke \
         seal unseal serve airgap-status spike-docker seal-pf unseal-pf \
@@ -59,6 +59,12 @@ test:  ## Unit + integration suites (FakeLLM/FakeScorer, no models)
 
 test-ci:  ## The model-free subset CI runs (no provisioned models / Ollama). Marker-selected.
 	$(PYTEST) -m "not needs_models and not needs_ollama" -q
+
+test-all:  ## Full suite incl. needs_models (real ONNX + spaCy) and needs_ollama (provisioned host)
+	$(PYTEST) -q
+
+test-e2e:  ## Golden path against real models + a live Ollama (the needs_ollama subset)
+	$(PYTEST) -m "needs_ollama" -q
 
 provision:  ## PROVISION EVERYTHING (online, one-way door): steps 01..10 in order
 	@$(PYTHON) -m sagp.netguard.phase to-provision
