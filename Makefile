@@ -17,7 +17,7 @@ PYTEST  := "$(VENV)/bin/pytest"
 .PHONY: help doctor venvs install install-provision lint format typecheck test clean \
         provision verify-manifest audit-verify eval samples \
         verify verify-online evidence proof smoke \
-        seal unseal serve airgap-status spike-docker
+        seal unseal serve airgap-status spike-docker seal-pf unseal-pf
 
 help:  ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -112,6 +112,12 @@ airgap-status:  ## Print phase, seal_generation, unseal count
 
 spike-docker:  ## Online, Docker running: resolve OQ-4/OQ-5 empirically -> ADR-0002
 	bash scripts/spike_docker.sh
+
+seal-pf:  ## OPTIONAL, sudo, HOST-WIDE: pf blocks all non-loopback egress (dry-run parsed first)
+	bash scripts/seal_pf.sh
+
+unseal-pf:  ## Reverse make seal-pf: restore /etc/pf.conf backup, flush the com.sagp anchor
+	bash scripts/unseal_pf.sh
 
 clean:  ## Remove venvs and caches
 	rm -rf "$(VENV)" "$(VENV_PROVISION)" .pytest_cache .ruff_cache .mypy_cache

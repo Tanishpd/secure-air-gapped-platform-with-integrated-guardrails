@@ -1,0 +1,36 @@
+# com.sagp — pf anchor for the sealed sagp host. Loaded by `make seal-pf`.
+#
+# WHAT IT IS. macOS pf (packet filter) rules that block ALL new outbound traffic
+# except loopback. This is the layer the in-process Python egress guard cannot be:
+# it catches native code (grpcio's C core, ONNX Runtime, ctypes), the sibling
+# Ollama process, and any child process — none of which enter CPython's socket
+# layer or emit a PEP 578 event. It is the Docker demo path's egress control too
+# (ADR-0002: compose options do NOT isolate the container on Docker Desktop).
+#
+# WHY BLOCKING NON-LOOPBACK COSTS SAGP NOTHING. Everything sagp needs is loopback:
+# Ollama on 127.0.0.1:11434, Qdrant (embedded = in-process; demo = 127.0.0.1:6333).
+# So a sealed box has NO legitimate egress, and blocking it is the whole point.
+#
+# HONEST LIMITS (LIMITATIONS.md). This is HOST-WIDE: once enforced it blocks the
+# entire machine's outbound to non-loopback, which is correct ONLY on a box you
+# intend to air-gap. It does NOT cover Docker's traffic, which leaves via a
+# root-owned VM interface (utun/bridge) that this ruleset does not match — the
+# documented gap. It covers UID-owned TCP/UDP, including Ollama.
+#
+# This file is an ANCHOR body: pass/block rules only, NO `set` options (`set` is
+# global and lives in the main ruleset, never an anchor). Loaded via
+# `pfctl -a com.sagp -f deploy/pf/com.sagp`; enforced when /etc/pf.conf references
+# `anchor "com.sagp"` (make seal-pf wires that up, with a backup + make unseal-pf).
+#
+# Syntax-checked with `pfctl -n -f deploy/pf/com.sagp` (parse only; no sudo, no load).
+
+# 1. Pass everything on the loopback interface (Ollama, demo Qdrant, local IPC).
+pass quick on lo0 all
+
+# 2. Defensively pass any outbound aimed at a loopback address on another iface.
+pass out quick inet  proto { tcp udp icmp }      from any to 127.0.0.0/8 keep state
+pass out quick inet6 proto { tcp udp icmp6 }     from any to ::1         keep state
+
+# 3. Block and log every other new outbound flow. A sealed box has no legitimate
+#    egress; this is the air gap the software controls only simulate.
+block drop out log all
