@@ -4,9 +4,12 @@ The deep technical reference for `sagp` — process boundaries, the numbered req
 data model, module dependency rules, and the concurrency, memory and fail-closed models. It is derived
 from and must stay consistent with [BLUEPRINT.md](BLUEPRINT.md) (authoritative) and [PLAN.md](PLAN.md).
 
-> Every number in this document that has not been measured on the target M2 carries an explicit
-> `(ESTIMATE)`, `(UNVERIFIED)` or **OPEN QUESTION** marker. Milestone **M13** replaces the estimates
-> with measurements. Do not quote an estimate from this file as a fact.
+> As of 2026-08-01 the code this document describes is **built and tested** (M0–M14; 258 tests pass,
+> `make smoke` is 14/14). A few figures are now MEASURED and their markers are dropped — the injection
+> ONNX session RSS (0.30 GB, OQ-1 resolved), the embedding parity gate (1.6e-07), and the M6 guardrail
+> metrics in `docs/metrics/latest.json`. Every number that has **not** been measured on the target M2
+> still carries an explicit `(ESTIMATE)`, `(UNVERIFIED)` or **OPEN QUESTION** marker — every latency
+> and every RAM total remains a projection. Do not quote an estimate from this file as a fact.
 
 ---
 
@@ -18,8 +21,8 @@ from and must stay consistent with [BLUEPRINT.md](BLUEPRINT.md) (authoritative) 
 |---|---|---|
 | G1 | Run a local LLM with retrieval over a local PDF corpus with **no network egress** from the guarded interpreter | The 9 offline assertions in BLUEPRINT §9.2, each paired with a positive control |
 | G2 | **De-identify** personal data before anything reaches the model | `<EMAIL_ADDRESS_1>` appears in the prompt sent to Ollama, the real address does not — smoke check 12/14 |
-| G3 | **Block prompt injection** before anything reaches the retriever or the model | Corpus metrics: recall ≥ 0.90, precision ≥ 0.85, benign FPR ≤ 0.10 — **build-gate targets, not measurements**; nothing has been evaluated yet (GUARDRAILS §10.2) |
-| G4 | Treat **retrieved document text as untrusted** — the primary threat is a malicious document author | Ingest-time per-chunk scan, `docs_quarantine`, assembled-context re-scan (C19) |
+| G3 | **Block prompt injection** before anything reaches the retriever or the model | Corpus metrics measured at M6 (`docs/metrics/latest.json`): headline recall **1.0** (floor ≥ 0.90); precision **0.81** and benign FPR **0.32** *miss* their targets (0.85 / 0.10) and are OPEN `known_gaps`, severity medium (GUARDRAILS §10.2) |
+| G4 | Treat **retrieved document text as untrusted** — the primary threat is a malicious document author | Ingest-time per-chunk scan, the per-collection `<collection>__quarantine` sibling, assembled-context re-scan (C19) |
 | G5 | **Fail closed** everywhere. A guardrail that errors, times out, or returns a partial result blocks | `tests/security/test_guardrail_bypass.py` (AST + runtime spy); §10 of this document |
 | G6 | Leak **no detector signal** across the trust boundary | Every detector block is HTTP 400, byte-identical body, padded to a fixed rejection deadline (120 ms placeholder) |
 | G7 | Produce **tamper-evident, reproducible evidence** rather than assertions | Ed25519-signed `MANIFEST.json`, hash-chained audit log, signed evidence ledger |
@@ -53,7 +56,7 @@ flowchart TB
         subgraph UVI["Process 1: uvicorn --workers 1 &nbsp;·&nbsp; .venv &nbsp;·&nbsp; no torch / transformers / hub"]
             GW["Gateway<br/>app/routes/*, deps.py, middleware.py"]
             GP["Guardrail pipeline<br/>guardrails/pipeline.py"]
-            ORT["ONNX Runtime<br/>DeBERTa-v3 INT8 + bge-small"]
+            ORT["ONNX Runtime<br/>DeBERTa-v3 FP32 + bge-small"]
             PRE["Presidio + spaCy en_core_web_md"]
             RAGX["RAG subsystem<br/>rag/*"]
             AUD["Audit subsystem<br/>audit/*"]
@@ -190,8 +193,10 @@ back to any hosted API. Be reachable from a route that skipped the pipeline.
 ### 3.5 Vector store — Qdrant
 
 **Responsibility.** Cosine-similarity retrieval over 384-d vectors, with payload filtering that keeps
-`guard.verdict == "quarantined"` chunks permanently out of results, plus a separate `docs_quarantine`
-collection for admin review.
+`guard.verdict == "quarantined"` chunks permanently out of results, plus a per-collection
+`<collection>__quarantine` sibling for admin review — one quarantine collection per corpus collection,
+which the retriever refuses to open (`is_quarantine_name`), so quarantined chunks are unreachable by
+construction.
 
 **Key modules.** `rag/vectorstore.py` (the Protocol), `rag/qdrant_store.py` — one class over three
 modes: `embedded(path=data/qdrant)`, `server(url=http://127.0.0.1:6333)` under `PROFILE=demo`, and
@@ -269,7 +274,7 @@ dependencies**, never as `BaseHTTPMiddleware`.
 | C16 | Per retrieved chunk: `normalize()` → `neutralize_placeholders()` | `rag/retriever.Retriever.sanitize_hits` | `n > 0` → **drop the chunk** + high-severity alarm (tamper signal) |
 | C17 | `BatchAnalyzerEngine.analyze_iterator(chunks, "en", batch_size=6, n_process=1)` with EGRESS profile (0.35); `anonymize` each with the **same vault**, `origin=f"doc:{sha}"`. BLOCK-list **rejection** NOT applied to chunks — but block-tier entities ARE masked here (binary / egress 0.40; GUARDRAILS §5.1), so nothing leaks unmasked | `guardrails/pii.PIIGuardrail.mask_chunks` | exception → **503** |
 | C18 | **Budget-select** masked chunks by retrieval score until under `SAGP_MAX_CTX_CHARS=7000` (**trim happens here, before the C19 re-scan**, so the scanned string is the delivered string), then `nonce = secrets.token_hex(8)`; each surviving chunk wrapped `<<<UNTRUSTED_DOCUMENT_{nonce}_S{i}>>> … <<</UNTRUSTED_DOCUMENT_{nonce}_S{i}>>>`. No datamarking. Retrieved content goes in the **user** role | `rag/prompt.build_prompt` + `utils/text.trim_to_budget` | the sole builder of the final prompt string; budget leaves 0 chunks → C15 refusal |
-| C19 | **Single** injection re-scan of the assembled masked context, threshold 0.90, adjacent-window corroboration (4–5 windows, so it is operative here; `max` governs, corroboration only escalates — GUARDRAILS §4.3) | `guardrails/injection/scanner.InjectionScanner.scan_context` | hit → drop the highest-scoring chunk, **re-apply the C18 budget**, reassemble, rescan (max 2 iterations). All chunks dropped → C15 refusal. Exception → **503** |
+| C19 | **Drop-and-continue** injection re-scan at threshold 0.90, in two parts. **C19a** scans each masked retrieved chunk on the `retrieval` surface and **drops only the flagged chunks** — a single poisoned chunk must not deny service to a query that also retrieved good ones. **C19b**, after the C18 budget trim, re-scans the **fully assembled** masked string as one unit (4–5 windows, so corroboration is operative here; `max` governs, corroboration only escalates — GUARDRAILS §4.3) | C19a `guardrails/pipeline.InputGuardrail.filter_context`; C19b `.scan_context` | flagged chunk → dropped; **all** chunks dropped → C15 refusal (`decision="refuse_context_flagged"`, no LLM call); assembled-string hit → same refusal, no LLM call; exception → **503** |
 | C20 | Assert the re-scanned assembled context is byte-identical to the user-role payload C21 sends (`test_final_bytes_were_scanned`, §9.4) | `guardrails/pipeline` invariant | any divergence is a bug, not a runtime path |
 | C21 | `ollama.Client("http://127.0.0.1:11434").chat(model, messages, stream=False, keep_alive="30m", options={temperature:0.1, top_p:0.9, num_predict:512, seed:42})`, timeout 120 s. **Never pass `num_ctx` per request** | `llm/ollama_client.OllamaClient.generate` | timeout or exception → **503** |
 | C22a | Output structural: strip markdown images/links; nonce delimiter or a system-prompt n-gram present in the output | `guardrails/output.structural_check` | → **block**, return `refusal.txt` — closes the zero-click exfil channel |
@@ -305,7 +310,8 @@ attack text — the mask *is* the evasion. Concretely, a prompt whose injection 
 as a fake person or organisation name would arrive at the scanner already redacted to a two-token
 placeholder that scores as benign. Scanning first means the classifier always sees the adversary's
 actual bytes. This ordering is invariant 7 in `CLAUDE.md` ("never mask before scanning") and is
-specified to be enforced by `tests/unit/test_pipeline_order.py`, which does not exist yet.
+enforced by the shipped pipeline (M10); a dedicated `tests/unit/test_pipeline_order.py` asserting stage
+identity is not yet part of the suite, so the order rests on the pipeline wiring and the e2e path.
 
 **(b) C13 embeds `neutral` — the normalized, unmasked query, not `masked_prompt`.**
 `neutral` is normalized and placeholder-neutralized but **not** anonymized (it is *not* the raw
@@ -327,7 +333,7 @@ valid ASCII placeholder inside the text that reaches C12 and C23 — a user-supp
 rehydration would later treat as real. Normalizing first collapses every equivalent encoding into the
 one form the placeholder regex is written against. The same argument applies to any Unicode-equivalent
 spelling of the delimiter characters. `placeholders.py` exports exactly **one** `PLACEHOLDER_RE`
-constant used by both `neutralize()` and `rehydrate()`, and a property test is specified to assert that
+constant used by both `neutralize()` and `rehydrate()`, and a property test (shipped at M3) asserts that
 anything `rehydrate` matches, `neutralize` also matches.
 
 ---
@@ -345,16 +351,18 @@ Reproduces BLUEPRINT §5.6. The same `registry.build_pipeline()` wires both path
 | I5 | Chunk: page-first, 320 tokens / 64 overlap, min 32 | `rag/chunking.chunk_pages` | pure function; no failure mode |
 | I6 | Presidio `analyze` (INGRESS 0.50) per chunk → record entity **types + counts** into the payload. **No masking. BLOCK list NOT applied** | `guardrails/pii.PIIGuardrail.analyze_only` | analyze exception/timeout → chunk **quarantined** |
 | I7 | Injection scan per chunk: heuristics + classifier over `raw` **and** `normalized`, take max. Verdict `clean` (< 0.70) / `suspect` (0.70–0.95) / `quarantined` (≥ 0.95, high-confidence heuristic, or `truncated=True`) | `guardrails/injection/scanner.InjectionScanner.scan` | scanner exception/timeout → **quarantined**, never `clean` |
-| I8 | `quarantined` → `docs_quarantine` collection (never retrieved, admin-reviewable). Others → main collection | `rag/qdrant_store.QdrantStore.upsert` | routing is decided before embedding, not after |
+| I8 | `quarantined` → the per-collection `<collection>__quarantine` sibling (never retrieved — the retriever refuses to open it, `is_quarantine_name`; admin-reviewable). Others → main collection | `rag/qdrant_store.QdrantStore.upsert` + `rag/vectorstore.quarantine_name` | routing is decided before embedding, not after |
 | I9 | Embed the stored chunk text, `is_query=False` (no query prefix) | `rag/embeddings.Embedder.encode` | exception → abort ingest, roll back by `doc_sha256` |
 | I10 | Delete superseded `doc_sha256` for the same basename **first**, then `upsert` with `uuid5(NS, f"{sha}:{idx}")` | `rag/ingest.ingest_document` + `utils/ids.point_id` | a crash mid-run leaves a *partial* (re-runnable) index, never a duplicated one |
 | I11 | Write `AuditEvent(event_type="ingest")`, `fsync` | `audit/sink.AuditSink.write` | audit write failure → **request fails** |
 
-**Two scans total, by design** (BLUEPRINT §0 row 16): once per chunk at **ingest** (I7), once over the
-**assembled masked context** at retrieval (C19). Not per chunk at retrieval — that compounds cost 3×
-for no signal. Note also that adjacent-window corroboration is **inoperative** at I7: a 320-token chunk
-is exactly one 512-token window. It is operative only at C19, where the assembled context spans 4–5
-windows.
+**Scan budget, as built:** once per chunk at **ingest** (I7), and at retrieval the C19 re-scan runs in
+two parts — **C19a** scores each masked retrieved chunk on the `retrieval` surface and drops only the
+flagged ones (drop-and-continue), then **C19b** re-scans the assembled masked context as one unit. The
+per-chunk pass is what lets one poisoned chunk be dropped without denying the whole request; the
+assembled pass is what catches a payload split across chunks. Adjacent-window corroboration is
+**inoperative** at I7 and at C19a — a 320-token chunk is exactly one 512-token window — and operative
+only at C19b, where the assembled context spans 4–5 windows.
 
 ---
 
@@ -649,8 +657,9 @@ before rate limits bite. One worker plus `CapacityLimiter(2)` is the whole defen
 Reproduced from BLUEPRINT §7 with its markers intact. **This table is the embedded profile**
 (`SAGP_QDRANT_MODE=embedded`, the default runtime backend): `llama3.2:3b-instruct-q4_K_M`,
 `num_ctx=4096`, KV `q8_0`, embedded Qdrant, ONNX runtime. The demo/Docker profile (`PROFILE=demo`) is
-the ~7.60 GB row in the variants table below. **Nothing here except the macOS baseline has been
-measured** — the totals are sums of estimates, not observations (BLUEPRINT §14 OQ-1).
+the ~7.60 GB row in the variants table below. **Only the macOS baseline (measured) and the injection
+classifier session (0.30 GB, OQ-1 resolved) are measurements** — every other line, and every total, is
+a sum of estimates, not an observation (BLUEPRINT §14).
 
 | Component | RSS (GB) | Basis |
 |---|---|---|
@@ -658,15 +667,15 @@ measured** — the totals are sums of estimates, not observations (BLUEPRINT §1
 | Ollama server + model weights (2.0) + KV @ q8_0 (0.24) + compute graph/runtime (0.35) | 2.59 | **ESTIMATE** — verify with `ollama ps` (OQ-8) |
 | CPython 3.11 + FastAPI + uvicorn + pydantic | 0.15 | **ESTIMATE** |
 | onnxruntime runtime (one process, two sessions) | 0.12 | **ESTIMATE** |
-| DeBERTa-v3-base INT8 ONNX session | **0.30** | **UNVERIFIED — hard gate, see OQ-1** |
+| DeBERTa-v3-base **FP32** ONNX session | **0.30** | **MEASURED (OQ-1 resolved).** FP32, not INT8 (OQ-2 — INT8 inverts this checkpoint); ORT mmaps the weights, so FP32 matches the old INT8 projection |
 | bge-small-en-v1.5 ONNX session (133 MB fp32) | 0.18 | **ESTIMATE** |
 | spaCy `en_core_web_md` pipeline (24.0 MB vectors + weights) | 0.20 | **ESTIMATE** |
 | Presidio registry + compiled regexes | 0.03 | **ESTIMATE** |
 | Qdrant embedded (client + local segments, ≤ 50k vectors) | 0.08 | **ESTIMATE** |
 | pypdf + transient page buffers | 0.05 | **ESTIMATE** |
 | tokenizers + numpy + grpcio/httpx + misc | 0.05 | **ESTIMATE** |
-| **App process total** | **1.16** | **ESTIMATE — sum of estimates**; gate: refuse to boot above 1.40 |
-| **SYSTEM TOTAL (embedded profile)** | **6.75** | **ESTIMATE — contains the UNVERIFIED OQ-1 figure; headroom 1.25 GB, projected, not measured** |
+| **App process total** | **1.16** | **ESTIMATE — sum of estimates** (only the 0.30 classifier line is measured); gate: refuse to boot above 1.40 |
+| **SYSTEM TOTAL (embedded profile)** | **6.75** | **ESTIMATE — the OQ-1 classifier figure is now measured (0.30); every other line is still an estimate; headroom 1.25 GB, projected, not measured** |
 
 Every total in the variants table is a **projected** verdict on **projected** arithmetic. None of it has
 been measured on this M2.
@@ -675,8 +684,8 @@ been measured on this M2.
 |---|---|---|
 | Embedded profile (the table above) — the default runtime backend | **6.75** | fits with 1.25 GB projected headroom; the profile to ship |
 | `PROFILE=demo` — Docker Qdrant, `mem_limit 512m`, Docker Desktop VM capped at 2 GB. The demonstration and proof path; its isolation is **untested** (OQ-4/OQ-5) | ~7.60 | projected to fit with no margin; close other apps |
-| INT8 lands at 0.60 GB instead of 0.30 (embedded) | 7.05 | projected to still fit — this is why the gate is 0.35, not 0.30 |
-| FP32 ONNX fallback (0.80 GB classifier) | 7.25 | projected to fit only with embedded Qdrant + `llama3.2:1b`; drop the 3B |
+| Classifier session RSS regresses above 0.30 GB (why the gate is 0.35, not 0.30) | ≤ 7.05 | did not happen — the FP32 session **measured 0.30 GB** (OQ-1); the 0.35 gate remains as headroom |
+| FP32 ONNX classifier — **now the shipped runtime**, not a fallback (INT8 rejected, OQ-2) | 6.75 | ORT mmaps the weights, so FP32 **measured 0.30 GB** (not the once-feared 0.80) and does **not** force `llama3.2:1b`; no LLM downgrade needed |
 | `en_core_web_lg` instead of `md` (embedded) | 7.35 | discouraged; +0.60 GB for +0.81 aggregate `ENTS_F` |
 | `llama3:8b` @ ctx 2048, q8_0 KV, everything else stripped (embedded) | **9.28** | **projected NOT to fit.** Over by 1.3 GB |
 
@@ -699,8 +708,8 @@ per component.
 
 ## 10. Fail-closed matrix
 
-There is exactly one fail mode: closed. Every row below is specified to become a test in
-`tests/security/` or `tests/integration/`; none of those tests exists yet.
+There is exactly one fail mode: closed. Every row below is backed by a test in `tests/security/` or
+`tests/integration/`; those suites exist and pass as of M11 (258 tests green overall).
 
 | Component / condition | Behaviour | HTTP | Audit `decision` |
 |---|---|---|---|
@@ -708,7 +717,7 @@ There is exactly one fail mode: closed. Every row below is specified to become a
 | Injection classifier **times out** (> 2000 ms) or raises at request time (C6, C19) | Block. Vault cleared, no LLM call | **503 `GUARDRAIL_UNAVAILABLE`** | `unavailable` |
 | Injection classifier reports `truncated=True` (> 16 windows) | Block on **every** surface — "too long to scan" never means allowed. At ingest the chunk is `quarantined` | **400 `PROMPT_REJECTED`** | `block` |
 | **Presidio times out** (> 3000 ms wall clock, `anyio.fail_after` around the offloaded thread) at C9/C17/C22b | Block. Never a partial result set at 200 | **503** | `unavailable` |
-| **Presidio recognizer regex timeout** (`regex.finditer(timeout=REGEX_TIMEOUT_SECONDS)`) | Block. `PIIGuardrail` wraps `analyze()` so a swallowed regex timeout cannot return a short result set. **OPEN QUESTION (OQ-6):** whether the timeout propagates out of `analyze()` or is caught and logged at 2.2.364 is **unread**; if it is caught, an unwrapped call is a textbook silent fail-open in the masking layer. Read `PatternRecognizer.__analyze_patterns` before M4 | **503** | `unavailable` |
+| **Presidio recognizer regex timeout** (`regex.finditer(timeout=REGEX_TIMEOUT_SECONDS)`) | Block. `PIIGuardrail` wraps `analyze()` so a swallowed regex timeout cannot return a short result set. **OQ-6 RESOLVED-CONFIRMED** against `presidio-analyzer==2.2.364` source: `PatternRecognizer.__analyze_patterns` **catches `TimeoutError` per pattern, logs "skipping", and returns a partial set** — a real silent fail-open, which is exactly why M4 wraps the call and treats a per-pattern regex timeout as a guardrail failure | **503** | `unavailable` |
 | **Qdrant unreachable** or erroring (C14, I8/I10) | Chat: block before any LLM call. Ingest: abort and roll back by `doc_sha256` | **503** | `unavailable` |
 | Qdrant collection `embed_model`/`embed_revision` mismatch | Hard error at collection open — never a query. See §6.4 | **503** (or startup failure if detected in `lifespan`) | `unavailable`, `reason_code=embed_model_mismatch` |
 | **Ollama unreachable**, erroring, or > 120 s (C21) | Block. No partial completion is ever returned; nothing unscanned reaches the caller | **503** | `unavailable` |
@@ -739,7 +748,7 @@ withhold the answer. Only the audit record distinguishes them, and only
 | C3 normalize | 1–3 ms (ESTIMATE) | 5 ms (ESTIMATE) | scales with input length; cap 8000 chars |
 | C4 heuristics | 1–3 ms (ESTIMATE) | 6 ms (ESTIMATE) | compiled `regex` table |
 | C5 deobfuscate | 2–10 ms (ESTIMATE) | 30 ms (ESTIMATE) | depth 2, 256 KB cap; worst case is a wide fan-out of decodes |
-| **C6 injection classifier** | **60–200 ms (ESTIMATE)** | **400 ms (ESTIMATE)** | **dominates the guardrail budget.** DeBERTa-v3-base INT8, 1–16 windows of 512 tokens, `intra_op=4`. Hard timeout 2000 ms |
+| **C6 injection classifier** | **60–200 ms (ESTIMATE)** | **400 ms (ESTIMATE)** | **dominates the guardrail budget.** DeBERTa-v3-base **FP32 ONNX**, 1–16 windows of 512 tokens, `intra_op=4`. Hard timeout 2000 ms |
 | C8 neutralize placeholders | < 1 ms (ESTIMATE) | 2 ms (ESTIMATE) | one regex pass |
 | C9 Presidio ingress analyze | 30–120 ms (ESTIMATE) | 300 ms (ESTIMATE) | spaCy `en_core_web_md` NER dominates. Hard timeout 3000 ms |
 | C10–C12 block check, aliases, anonymize | 2–10 ms (ESTIMATE) | 25 ms (ESTIMATE) | |
@@ -747,7 +756,7 @@ withhold the answer. Only the audit record distinguishes them, and only
 | C14 Qdrant `query_points` (embedded) | 3–15 ms (ESTIMATE) | 40 ms (ESTIMATE) | ≤ 50k vectors. `PROFILE=demo` adds loopback + VM hop |
 | C16–C17 chunk sanitize + batch mask | 60–250 ms (ESTIMATE) | 600 ms (ESTIMATE) | 6 chunks through `BatchAnalyzerEngine`, `batch_size=6`, `n_process=1` |
 | C18 prompt assembly + budget trim | < 5 ms (ESTIMATE) | 10 ms (ESTIMATE) | |
-| C19 assembled-context re-scan | 100–300 ms (ESTIMATE) | 700 ms (ESTIMATE) | 4–5 windows, up to 2 reassembly iterations |
+| C19 re-scan (C19a per-chunk filter + C19b assembled) | 100–300 ms (ESTIMATE) | 700 ms (ESTIMATE) | per-chunk drop-and-continue, then one assembled scan of 4–5 windows |
 | **C21 Ollama generation** | **4–15 s (ESTIMATE)** | **40 s (ESTIMATE)** | `llama3.2:3b-q4_K_M`, `num_predict=512`, CPU/Metal on M2. Timeout 120 s |
 | C22a–C22d output guard | 40–200 ms (ESTIMATE) | 500 ms (ESTIMATE) | two Presidio passes over the completion (C22b + C22c) |
 | C23–C26 rehydrate, audit, fsync, clear | 3–15 ms (ESTIMATE) | 40 ms (ESTIMATE) | `fsync` dominates |
@@ -819,8 +828,8 @@ Add a function in `rag/loaders.py` that returns `list[TextArtifact]` with `page`
 populated, and register it by extension. It must carry a hidden-content detector equivalent to the
 pypdf `visitor_text` hook — any format that can render text invisibly (tiny fonts, off-canvas
 positioning, invisible render modes, white-on-white, alt-text and comment fields) needs its analogue,
-and any flag it raises must route that page's chunks to `docs_quarantine` rather than merely annotating
-them.
+and any flag it raises must route that page's chunks to the `<collection>__quarantine` sibling rather
+than merely annotating them.
 
 Licence gate: the loader's dependency must be permissively licensed. **PyMuPDF was rejected on
 AGPL-3.0 §13 grounds** for exactly this reason, and pypdf 6.14.2 (BSD-3) chosen instead. Add the
@@ -861,7 +870,7 @@ index rather than a duplicated one.
 | [0001](adr/0001-ollama-over-vllm.md) | Ollama over vLLM | No 4-bit on vLLM CPU, a Python 3.12 collision, and a preallocating KV pool that does not fit in 8 GB. |
 | [0002](adr/0002-qdrant-deployment-mode.md) | Qdrant deployment mode — **Proposed, blocked on the Phase-0 spike** | Qdrant is the only store; `SAGP_QDRANT_MODE=embedded` is the default runtime backend on RAM grounds (6.75 GB embedded vs 7.60 GB demo/Docker, both projected) and `PROFILE=demo` (Docker) is the demonstration and proof path. This ADR **will record** the Phase-0 spike that must resolve OQ-4/OQ-5; the spike has not been run, so the Docker path's isolation is **untested**. |
 | [0003](adr/0003-two-virtualenvs.md) | Two virtualenvs | `.venv` sealed vs `.venv-provision` online dissolves the `transformers`/`huggingface-hub` resolution deadlock and removes ~0.45 GB of torch RSS. |
-| [0004](adr/0004-onnx-int8-no-torch.md) | ONNX INT8, no torch at runtime | `quantize_dynamic` with **default** op types, plus the tokenizer/FP32↔INT8/embedding parity gates that make dropping `transformers` safe. |
+| [0004](adr/0004-onnx-int8-no-torch.md) | ONNX (no torch at runtime) | The INT8 parity gate **failed** (OQ-2 — `quantize_dynamic` inverts this DeBERTa-v3), so **FP32 ONNX ships**; the tokenizer and embedding parity gates (embedding parity **1.6e-07**) still make dropping `transformers` safe. |
 | [0005](adr/0005-vault-request-scoped.md) | The vault is request-scoped | Never persisted, cleared in a `finally`, and the reason the endpoint is single-turn. |
 | [0006](adr/0006-ingest-mode-raw.md) | `ingest_mode=raw` | Store real chunk text and mask at retrieval; masking at ingest collides placeholders across identities and destroys recall. Compensating controls are loopback binding and FileVault. |
 | [0007](adr/0007-audit-hash-chain.md) | Audit hash chain | Tamper-**evident**, not tamper-proof; the head digest must be exported off-box or the chain proves nothing. |

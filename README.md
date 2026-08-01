@@ -8,9 +8,13 @@ overclaims is worse than no system at all.
 
 That link is in the first paragraph deliberately. This repository is *designed* to demonstrate that a
 specific set of software controls refuses every egress attempt we could construct, on a host proven to
-have working internet moments earlier — a demonstration that has **not yet been run** (the repo is
-documentation-only; see [Status](#status)). Even once run, it cannot prove the machine is incapable of
-reaching the internet. The difference between those two sentences is the entire honesty budget of this
+have working internet moments earlier. The proof harness is built and the **online negative control has
+run live** (M13): with the guard auditing, this host completed a real TCP handshake to `1.1.1.1:443`;
+with the guard enforcing, the identical probe raised `EgressViolation`. What has **not** been run is the
+full sealed demonstration on a physically disconnected host — this dev host is deliberately kept in the
+`PROVISION` phase and never sealed, so the end-to-end air-gap verdict is `INVALID` by design (see
+[Status](#status)). And even once that is run, it cannot prove the machine is incapable of
+reaching the internet. The difference between those sentences is the entire honesty budget of this
 project, and [LIMITATIONS.md](docs/LIMITATIONS.md) spends it line by line.
 
 ---
@@ -20,14 +24,14 @@ project, and [LIMITATIONS.md](docs/LIMITATIONS.md) spends it line by line.
 The demo narrative, in six steps:
 
 1. **Disconnect the machine.** Wi-Fi off, adapters unplugged, `ping -c1 1.1.1.1` must fail — and the
-   in-process egress guard is armed in `enforce` mode, specified to have been demonstrated (at M13,
+   in-process egress guard is armed in `enforce` mode, demonstrated (at M13,
    while the network still worked) to refuse every probe we could construct (see
    [The air-gap demonstration](#the-air-gap-demonstration)).
 2. **Ingest a local PDF.** `make ingest FILE="data/samples/employee_handbook.pdf" COLLECTION=handbook`
    extracts text with `pypdf`, detects hidden text (sub-1.0pt fonts, off-MediaBox placement,
    `/RenderMode 3`), scans every chunk for injection, and routes chunks scoring **≥0.95** (or
-   carrying a block-tier heuristic, or `truncated=True`) to a never-retrieved `docs_quarantine`
-   collection. Chunks scoring **0.70–0.95 are marked `suspect` and are still indexed and
+   carrying a block-tier heuristic, or `truncated=True`) to a never-retrieved per-collection
+   `<collection>__quarantine` sibling collection. Chunks scoring **0.70–0.95 are marked `suspect` and are still indexed and
    retrievable** — the assembled-context re-scan at `C19` is what covers those, not quarantine.
 3. **Embed locally.** `BAAI/bge-small-en-v1.5` as ONNX under ONNX Runtime — CLS pooling then L2
    normalize, 384 dimensions. No `torch`, no `transformers`, no `huggingface-hub` in the serving venv.
@@ -44,8 +48,8 @@ The demo narrative, in six steps:
    an opaque body carrying no score or rule name, and a fixed rejection deadline (120 ms placeholder)
    so the rejection surface is not a detector oracle.
 
-Steps 5 and 6 are the brief's literal claim. They become demonstrable at milestone **M10** — see
-[Status](#status).
+Steps 5 and 6 are the brief's literal claim. They are demonstrable as of milestone **M10** (done, and
+validated against real Ollama) — see [Status](#status).
 
 ---
 
@@ -69,9 +73,12 @@ Five caveats are load-bearing. A reader who stops at this README should still le
    evidence bundle lives on the same host the bundle attests to, timestamps come from the local
    clock, and neither provides non-repudiation to a third party
    ([OPERATIONS.md §1](docs/OPERATIONS.md)).
-5. **No metric in this repository has been measured.** Every recall floor, latency figure and RAM
-   number here is a target, an estimate or an unverified arithmetic derivation; `make eval` has never
-   run ([GUARDRAILS.md §10.2](docs/GUARDRAILS.md), [EVALUATION.md §1](docs/EVALUATION.md)).
+5. **Guardrail accuracy has been measured; latency and RAM have not.** `make eval` has run
+   (M6): injection headline recall is **1.0** and PII recall is **1.0** (EMAIL/CARD/AADHAAR/PERSON),
+   but injection precision (**0.81**) and benign FPR (**0.32**) miss their targets (0.85 / 0.10) and
+   are tracked as OPEN known gaps. Every **latency figure and RAM number** here, by contrast, remains a
+   target, an estimate or an unverified arithmetic derivation
+   ([GUARDRAILS.md §10.2](docs/GUARDRAILS.md), [EVALUATION.md §1](docs/EVALUATION.md)).
 
 ---
 
@@ -85,7 +92,7 @@ flowchart TD
         direction TB
         n["normalize()<br/>NFKC · tag/bidi block · homoglyph fold"]
         h["heuristics<br/>weighted rule IDs · deobfuscate depth 2"]
-        cls["injection classifier<br/>DeBERTa-v3-base INT8 ONNX"]
+        cls["injection classifier<br/>DeBERTa-v3-base FP32 ONNX"]
         pii["Presidio analyze → BLOCK list → mask<br/>request-scoped vault → &lt;EMAIL_ADDRESS_1&gt;"]
         n --> h --> cls --> pii
     end
@@ -119,16 +126,19 @@ file before any application code imports.
 
 ## Status
 
-**Documentation only.** No Python has been written: `src/`, `tests/`, `scripts/`, `config/`,
-`docs/metrics/`, the Makefile, `docker-compose.yml` and `pyproject.toml` do not exist yet, and no make
-target, test or script described below has ever been run. This pass (`M-DOCS`) puts the plan and the
-reconciled specification into the repository *before* any code, so the reasoning ships with the
+**M0–M14 are built, merged and tested (as of 2026-08-01).** `src/`, `tests/`, `scripts/`, `config/`,
+`bin/`, `docs/metrics/latest.json`, the Makefile, `docker-compose.yml` and `pyproject.toml` all exist;
+258 tests pass, `make lint`/`make typecheck` are green, and `make smoke` reports 14/14. Only **M15**
+(this documentation-against-measurements pass) remains. The dev host is deliberately kept in the
+`PROVISION` phase and has never been sealed for real, so the end-to-end air-gap verdict is `INVALID` by
+design (see [The air-gap demonstration](#the-air-gap-demonstration)). The `M-DOCS` pass put the plan and
+the reconciled specification into the repository *before* any code, so the reasoning shipped with the
 implementation. The build order and the definition of each milestone live in
 [docs/PLAN.md §7](docs/PLAN.md) and [BLUEPRINT.md §10](docs/BLUEPRINT.md).
 
 | Done | Milestone | Deliverable | Needs network |
 |---|---|---|---|
-| [x] | **M-DOCS** *(complete)* | Every markdown file written into the repo, plus `.gitignore`, `LICENSE`, `NOTICE`; `git init` run and the corpus committed. Documentation only — no code | no |
+| [x] | **M-DOCS** *(complete)* | Every markdown file written into the repo, plus `.gitignore`, `LICENSE`, `NOTICE`; `git init` run and the corpus committed. Docs written correct-as-of-design, *before* any code (M15 revisits them correct-as-measured) | no |
 | [x] | M0 *(done)* | Skeleton: `src/sagp/` tree, `pyproject.toml`, `Settings`, `errors.py`, `types.py`, Makefile — `make lint typecheck test` green | no |
 | [x] | M1 *(done)* | **PROVISION EVERYTHING** — `artifacts.lock`, `scripts/provision/01..10`, gates, signed `MANIFEST.json`. Classifier is **FP32 ONNX** (INT8 rejected — inverts this model, OQ-2); `llama3:8b` skipped | **done online** |
 | [x] | M2 *(done)* | Audit spine: closed `AuditEvent`, hash-chained JSONL (tamper-evident), HMAC correlation tokens, write-time scrub, `make audit-verify` | no |
@@ -171,16 +181,19 @@ cache, every other component stripped — projects to **9.28 GB against an 8 GB 
 with a 2–5 s stall at the head of every request **(ESTIMATE)** while the guardrail models fault back
 off the SSD. The
 pages evicted are precisely the idle security controls. That is a security-relevant characteristic,
-not merely slowness. The default is `llama3.2:3b-instruct-q4_K_M`; `llama3.2:1b` is the fallback if
-the INT8 parity gate fails. The app prints a loud startup warning when an `8b` tag is configured on a
-host with under 16 GB.
+not merely slowness. The default is `llama3.2:3b-instruct-q4_K_M`, retained even though the INT8 parity
+gate failed and the classifier fell back to FP32 ONNX — the FP32 session RSS is 0.30 GB measured
+(unchanged from the INT8 estimate, because ORT mmaps the weights), so no LLM RAM had to be bought
+back; `llama3.2:1b` is the last fallback rung, needed only if the classifier session cannot be
+afforded. The app prints a loud startup warning when an `8b` tag is configured on a host with under 16 GB.
 
 Projected totals, each naming the profile it assumes: the **embedded profile**
 (`SAGP_QDRANT_MODE=embedded`, the default runtime backend) projects to **6.75 GB**, leaving 1.25 GB of
 projected headroom; the **demo profile** (`PROFILE=demo`, Docker Qdrant) projects to **≈7.60 GB** —
 it fits, with no margin. Both are PROJECTIONS, not measurements: every line item except the 3.00 GB
-macOS baseline is an ESTIMATE, the INT8 classifier RSS is **UNVERIFIED**, and the totals are
-arithmetic over estimates — see **OQ-1** in [BLUEPRINT.md §14](docs/BLUEPRINT.md).
+macOS baseline (measured) and the **0.30 GB classifier session RSS** (measured at M1 — FP32 ONNX,
+OQ-1 resolved) is an ESTIMATE, and the totals are arithmetic over those estimates — see **OQ-1** in
+[BLUEPRINT.md §14](docs/BLUEPRINT.md).
 Disk: ≈9.7 GB lean (includes the `llama3:8b` pull), ≈19.6 GB with both venvs and both wheelhouses,
 plus ~3 GB transient during quantization — see [BLUEPRINT.md §8](docs/BLUEPRINT.md). **Disk-constrained?**
 Skip the optional `llama3:8b` pull (it doesn't fit in 8 GB RAM anyway) and the requirement drops to ~15 GB.
@@ -296,18 +309,19 @@ the host online, `make verify-online` does three things:
    the specific exception type, never a generic `OSError` or timeout.
 3. Write `evidence/verify-online-<gen>.json` carrying both timings. `make seal` refuses without it.
 
-The evidence line is specified to read (illustrative — this run has not happened; `verify_online.py`
-does not exist yet, see [Status](#status)):
+The evidence line reads (from the M13 run recorded in `evidence/verify-online-0.json`):
 
-> *"At 18:31:07Z this host completed a TCP handshake to 1.1.1.1:443 in 24 ms with the guard auditing;
-> with the guard enforcing, the identical probe raised `EgressViolation` in 0.4 ms."*
+> *"On 2026-08-01 this host completed a TCP handshake to 1.1.1.1:443 in 6.58 ms with the guard
+> auditing; with the guard enforcing, the identical probe raised `EgressViolation` in 0.004 ms."*
 
 Two measurements, same host, same probe, minutes apart. That pair is the only thing that distinguishes
-*blocked* from *absent*. Offline, `make verify` is specified to run nine assertions in the same
-spirit — each will assert on the `EgressViolation` type and each is paired with a positive control (a
+*blocked* from *absent*. Offline, `make verify` runs nine assertions in the same
+spirit — each asserts on the `EgressViolation` type and each is paired with a positive control (a
 loopback connection that must still succeed) so no test can pass for the wrong reason. Any negative
 control failing, a guard that is not installed, a manifest verified in `quick` mode, or an open
-high-severity gap yields `INVALID` or `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS` — **never** `PASS`.
+high-severity gap yields `INVALID` or `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS` — **never** `PASS`. The
+verdict function `netguard.evidence.compute_verdict` has exactly four values: `PASS`,
+`PASS_WITH_OPEN_HIGH_SEVERITY_GAPS`, `INVALID`, and `FAIL`.
 
 What this establishes, at most, is that specific software controls refused a specific probe set from
 inside CPython. It is not proof that the host cannot reach a network: native code (grpcio's C core,
@@ -353,7 +367,7 @@ starts — loading them through `.env` is too late, because they are read at imp
 | Variable | Default | What it does |
 |---|---|---|
 | `SAGP_QDRANT_MODE` | `embedded` | `embedded` selects the in-process Qdrant at `data/qdrant/` and is the default runtime backend (embedded profile: 6.75 GB projected total); the Docker server path is selected by `PROFILE=demo` and is the demonstration/proof path (demo profile: ≈7.60 GB projected, no margin) |
-| `SAGP_LLM_MODEL` | `llama3.2:3b-instruct-q4_K_M` | Ollama tag. `llama3.2:1b` is the parity-failure fallback. An `8b` tag triggers a loud startup warning and does not fit — see [Requirements](#requirements) |
+| `SAGP_LLM_MODEL` | `llama3.2:3b-instruct-q4_K_M` | Ollama tag. `llama3.2:1b` is the last RAM-pressure fallback rung (not triggered: the FP32 classifier fits at 0.30 GB). An `8b` tag triggers a loud startup warning and does not fit — see [Requirements](#requirements) |
 | `SAGP_SPACY_MODEL` | `en_core_web_md` | NER pipeline. `sm` for tests, `lg` opt-in at +0.60 GB (then the LLM must drop to `llama3.2:1b`) |
 | `SAGP_GUARD` | `enforce` | `audit` records egress attempts, `enforce` raises `EgressViolation`. Anything other than `enforce` invalidates a verification run |
 | `SAGP_API_TOKEN` | generated | Bearer token with scopes `chat`, `ingest` |
@@ -400,7 +414,7 @@ the hash of that configuration goes into every audit record. All thresholds are 
 | [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | You are mapping controls to GDPR / HIPAA / NIST SP 800-53 — a template, explicitly not legal advice | written |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | You want to know how the corpora were built and how the metric floors were chosen | written |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Day 2: key custody, rotation, retention, ledger-head export, backup and restore | written |
-| `docs/metrics/latest.json` | You need the metrics baseline; regressions >2pp fail the build | **does not exist** — produced by `make eval` at M6 |
+| `docs/metrics/latest.json` | You need the metrics baseline; regressions >2pp fail the build | **exists** — produced by `make eval` at M6 (injection recall 1.0, PII recall 1.0; precision 0.81 / FPR 0.32 open gaps) |
 | [docs/adr/0001..0009](docs/adr/) | You want to know *why* a contested choice went the way it did | written (0002 is `Proposed`, blocked on the Phase-0 spike) |
 | [CLAUDE.md](CLAUDE.md) | You are an agent editing this repo — 13 non-negotiable invariants | written |
 

@@ -8,12 +8,14 @@ make such an enclave usable in practice: automated PII de-identification before 
 model, and prompt-injection blocking before anything reaches the retriever. The deliverable is a
 *template* others can copy, not a one-off demo.
 
-**Where we are.** As of 2026-07-27, `/Users/tanishpd/Desktop/Secure Air-Gapped Platform with
-Integrated Guardrails` contains **documentation only** — README.md, CLAUDE.md,
-THIRD_PARTY_LICENSES.md, NOTICE, LICENSE, .gitignore, the ten files in `docs/`, and `docs/adr/0001–0009`.
-No code: `src/`, `tests/`, `scripts/`, `config/`, the Makefile, `docker-compose.yml` and
-`pyproject.toml` do not exist. Nothing installed. The repository is initialised and the
-documentation corpus is committed on `main`; no code has ever been committed.
+**Where we are.** As of 2026-08-01, M-DOCS and **M0–M14 are complete, merged and tested**. `src/`,
+`tests/`, `scripts/`, `config/`, `bin/`, the Makefile, `docker-compose.yml` and `pyproject.toml` all
+exist; the full suite is **258 tests passing**, `make lint`/`typecheck` are green, and `make smoke` is
+**14/14 PASS**. Indirect injection (M12), the offline demonstration harness (M13) and hardening (M14)
+are built. The dev host is deliberately kept in **PROVISION** phase — never sealed for real — so no
+green air-gap `PASS` has been produced (verdict `INVALID` by design). **M15 — this pass — revisits the
+docs to make them correct-as-measured.** The design-time text of this section read "documentation
+only, no code committed"; that was true at M-DOCS (2026-07-27), not now.
 
 **The intended outcome.** Disconnect the machine from the internet, ingest a local PDF, embed it
 locally, store the vectors locally, ask a question containing personal data, and get a grounded,
@@ -45,19 +47,25 @@ directory *before any code*. Nothing of value stays outside the repo.
 | Ollama | client 0.30.10, **no server, no models** | Everything pulled during PROVISION |
 | Network | online now | PROVISION must complete *before* sealing |
 
+*These are the BOOTSTRAP-time (pre-provision) readings. M1 PROVISION has since completed on this host —
+models fetched (`llama3:8b` skipped, disk-constrained), gates run, `MANIFEST.json` signed and committed
+— and the host is held in PROVISION phase (not sealed).*
+
 **The headline resource finding:** `llama3:8b` does not fit. Best case — 2048 context, q8_0 KV, every
 other component stripped — projects to **9.28 GB against an 8 GB ceiling**. macOS will compress and
 swap rather than OOM, so it will *appear* to work at 3–6 tok/s, with a 2–5 s stall at the head of
 each request **(ESTIMATE)** while the guardrail models fault back off SSD. The pages evicted are precisely the idle
 security controls. That is a security property, not just slowness.
 
-**Three facts about `llama3:8b`, stated together so no other document has to guess.** (1) It **is
-provisioned** — per your call the tag is pulled during PROVISION, costing 4.7 GB of disk. (2) It is
-**one env var away** — set `SAGP_LLM_MODEL=llama3:8b` and it is live; the default remains
-`llama3.2:3b-instruct-q4_K_M`. (3) It **does not fit** — it projects to 9.28 GB against the 8 GB
-ceiling, so the app prints a loud startup warning whenever an `8b` tag is set on a host under 16 GB
-and the projected-RSS boot refusal applies. Provisioned is not the same as supported: the tag exists
-so the trade-off can be demonstrated, not because the configuration is recommended.
+**Three facts about `llama3:8b`, stated together so no other document has to guess.** (1) It **was
+skipped on this host** — M1 did not pull the tag (disk-constrained; and it does not fit in 8 GB
+anyway), so this host does not carry it. The design keeps it available for hosts that want to
+reproduce the failure. (2) It is **one env var away on a host that carries it** — set
+`SAGP_LLM_MODEL=llama3:8b` and it is live; the default remains `llama3.2:3b-instruct-q4_K_M`. (3) It
+**does not fit** — it projects to 9.28 GB against the 8 GB ceiling, so the app prints a loud startup
+warning whenever an `8b` tag is set on a host under 16 GB and the projected-RSS boot refusal applies.
+Available is not the same as supported: the tag exists so the trade-off can be demonstrated, not
+because the configuration is recommended.
 
 ---
 
@@ -69,9 +77,9 @@ Every row below was a genuine contradiction between subsystem specs. One answer 
 |---|---|---|
 | **Runtime inference** | **ONNX Runtime only. No `torch`, no `transformers`, no `huggingface-hub` in the serving venv.** | Removes ~0.45 GB RSS and dissolves a real `ResolutionImpossible` between `transformers` and `huggingface-hub` pins |
 | **Two virtualenvs** | `.venv` (sealed runtime) + `.venv-provision` (online only: torch, transformers, onnx) | The provisioning toolchain never sits on the sealed critical path |
-| Injection model | `protectai/deberta-v3-base-prompt-injection-v2` @ `90c9989b…`, INT8-quantized ONNX | The name in your brief (`DeBERTa-v3-base-injection`) is the v1 ancestor; this is the ONNX-shipping successor — itself **archived and unmaintained upstream** (§11 item 6), chosen as the best available checkpoint despite that, not because it is maintained |
+| Injection model | `protectai/deberta-v3-base-prompt-injection-v2` @ `90c9989b…`, **FP32 ONNX** (INT8 dynamic quant *inverts* this DeBERTa-v3 checkpoint — its disentangled-attention relative-position embeddings break under INT8; OQ-2, RESOLVED at M1 — so the parity gate selected FP32) | The name in your brief (`DeBERTa-v3-base-injection`) is the v1 ancestor; this is the ONNX-shipping successor — itself **archived and unmaintained upstream** (§11 item 6), chosen as the best available checkpoint despite that, not because it is maintained |
 | Label resolution | Read `id2label` from `config.json` at boot; **never hardcode index 1** | Hardcoding silently *inverts* the guardrail — blocks benign, allows attacks |
-| Quantization | `quantize_dynamic(..., op_types_to_quantize=None)` (the default) | Passing `["MatMul","Gather"]` *narrows* the set — `Gather` is already in `IntegerOpsRegistry` |
+| Quantization | `quantize_dynamic(..., op_types_to_quantize=None)` (the default) — but the INT8 candidate it produces **failed the parity gate on this checkpoint (OQ-2)**, so **FP32 ONNX ships**; the quantizer still runs each provision so the gate re-proves the rejection | Passing `["MatMul","Gather"]` *narrows* the set — `Gather` is already in `IntegerOpsRegistry` |
 | Embeddings | `BAAI/bge-small-en-v1.5` @ `5c38ec7c…`, ONNX, **CLS pooling → L2 norm**, 384-d | MiniLM dropped. Pooling is specified because a hand-rolled ONNX path that mean-pools silently halves recall |
 | **Vector store** | **Qdrant only** — Chroma deleted. `SAGP_QDRANT_MODE=embedded` is the **default runtime backend**; `PROFILE=demo` → Docker is the **demonstration and proof path** | See §3 |
 | LLM | `llama3.2:3b-instruct-q4_K_M` default; `llama3.2:1b` fallback; `llama3:8b` available + warned | §1 |
@@ -112,7 +120,8 @@ have **different jobs**:
   the one the proof harness targets. It is opt-in, not the default.
 
 **One unknown, in two parts.** Whether `internal: true` can coexist with a published `127.0.0.1:6333`
-port on Docker Desktop is **untested** (OQ-4) — the daemon is not running. If it cannot, isolation
+port on Docker Desktop is **untested** (OQ-4) — `make spike-docker` has not been run and ADR-0002
+remains Proposed. If it cannot, isolation
 would come from `com.docker.network.bridge.enable_ip_masquerade: "false"` instead, which is itself
 unverified on Docker Desktop (OQ-5), since containers there egress via a userland VM proxy rather
 than a host MASQUERADE rule.
@@ -223,7 +232,10 @@ Any document showing C0–C21, or re-scanning before masking, or omitting C15 / 
 **The highest-value control — indirect injection.** Attacker-planted instructions inside an ingested
 PDF are the real RAG threat, and most demos scan only the user prompt. Here every chunk is scanned at
 **ingest** (`clean` / `suspect` / `quarantined`), quarantined chunks go to a separate never-retrieved
-collection, and the **assembled context is re-scanned** at retrieval. Plus hidden-text detection in
+**per-collection sibling `<collection>__quarantine`** (per-collection so re-ingesting one doc can't
+disturb another collection's quarantine; the retriever refuses to open a quarantine-suffixed
+collection, so those chunks are unreachable by construction), and the **assembled context is
+re-scanned** at retrieval. Plus hidden-text detection in
 the PDF loader — sub-1.0pt fonts, off-mediabox text, `/RenderMode 3` invisible text — via pypdf's
 `visitor_text` hook.
 
@@ -259,8 +271,10 @@ make proof         # verify + signed evidence report
 
 `make provision` exits non-zero if any **gate** fails, so you can never reach `make seal` with an
 unvalidated classifier. The four gates: tokenizer parity · FP32↔INT8 parity (`|Δ P(INJECTION)| < 0.05`,
-**zero label flips** across the corpus) · embedding parity vs `sentence-transformers` (atol 1e-4, 200
-fixtures) · **measured RSS** of every ORT session.
+**zero label flips** across the corpus — **at M1 the INT8 candidate FAILED this and was rejected in
+favour of FP32 ONNX**, OQ-2) · embedding parity vs `sentence-transformers` (atol 1e-4, 200 fixtures —
+**MEASURED at M1: 1.6e-07**) · **measured RSS** of every ORT session (**FP32 classifier 0.30 GB at
+M1**, OQ-1).
 
 ### The air-gap demonstration
 
@@ -269,11 +283,13 @@ The thing that makes this a blueprint rather than a claim is the **negative cont
 while the host **demonstrably has internet**, run the probes with the guard in `audit` mode and record
 the successes; flip to `enforce`; re-run the identical probes and require `EgressViolation` each time.
 
-The evidence line is specified to read (illustrative — the figures are placeholders, this run has not
-happened):
+The evidence line reads (MEASURED at M13 via `make verify-online`, run live):
 
-> *"At 18:31:07Z this host completed a TCP handshake to 1.1.1.1:443 in 24 ms with the guard auditing;
-> with the guard enforcing, the identical probe raised `EgressViolation` in 0.4 ms."*
+> *"this host completed a TCP handshake to 1.1.1.1:443 in **6.58 ms** with the guard auditing;
+> with the guard enforcing, the identical probe raised `EgressViolation`."*
+
+(The 6.58 ms audit-mode handshake is measured; the enforce path is characterised by the exception it
+raises, not by a latency figure.)
 
 Nine offline assertions, each network assertion asserting on the **`EgressViolation` type** (never a
 generic connection failure) and each **paired with a positive control** so a test cannot pass for the
@@ -281,8 +297,13 @@ wrong reason: guard-install receipt (if absent, everything below is INVALID) · 
 hook (where L1 is bypassed by construction) · DNS · httpx · subprocess (PEP 578) · AF_UNIX deny incl.
 `docker.sock` · Presidio-email-with-zero-violations · full manifest verify.
 
-Any negative control failing, guard not installed, `quick`-mode manifest, or an open high-severity gap
-yields **`INVALID`** or `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS` — never `PASS`.
+The proof verdict has **four** values: `PASS`; `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS` (an OPEN
+`severity: high` gap); `INVALID` (an invalidating condition fired — proves nothing); and `FAIL` (no
+invalidator fired but a core assertion **provably leaked**). Any negative control failing, guard not
+installed, `quick`-mode manifest, or an open high-severity gap yields `INVALID` or
+`PASS_WITH_OPEN_HIGH_SEVERITY_GAPS` — never `PASS`. `make verify` runs today (M13); on this unsealed
+dev host all nine offline assertions PASS, but the overall verdict is `INVALID` by design (phase ≠
+OPERATE and non-loopback dev listeners present).
 
 ---
 
@@ -296,22 +317,28 @@ different number and is quoted separately.
 |---|---|
 | macOS baseline (measured) | 3.00 |
 | Ollama: weights 2.0 + KV 0.24 + graph 0.35 | 2.59 **(ESTIMATE — OQ-8)** |
-| App process total (ORT ×2, spaCy md, Presidio, FastAPI) | 1.16 **(ESTIMATE — sum of estimates; includes the UNVERIFIED INT8 RSS of 0.30 — OQ-1)** |
+| App process total (ORT ×2, spaCy md, Presidio, FastAPI) | 1.16 **(ESTIMATE — sum of estimates; the classifier row is now the MEASURED 0.30 GB FP32 RSS — OQ-1 resolved; the rest remain estimates)** |
 | **Total (embedded profile)** | **6.75 (PROJECTED)** → 1.25 GB **projected** headroom |
 
 Projected verdicts, unmeasured, all against the 8 GB ceiling: `PROFILE=demo` (Docker Qdrant)
-≈ **7.60** — fits, no margin · FP32 fallback ≈ 7.25 · `en_core_web_lg` ≈ 7.35 ·
-**`llama3:8b` ≈ 9.28 — does not fit**. Exactly one row of this table (the macOS baseline) has been
-measured; nothing else in it has. `07_gates.py` and OQ-8 replace the rest with measurements.
+≈ **7.60** — fits, no margin · `en_core_web_lg` ≈ 7.35 · **`llama3:8b` ≈ 9.28 — does not fit**. (The
+old "FP32 fallback ≈ 7.25" verdict is superseded: FP32 ONNX **is** the shipped runtime classifier and
+its RSS is **0.30 GB measured** — OQ-1 — not a heavier 0.80 GB fallback, and it does not force
+`llama3.2:1b`.) **Two** inputs are now measured — the macOS baseline and the FP32 classifier RSS — the
+rest of the table is still estimated. `07_gates.py` and OQ-8 replace the remainder with measurements.
 
 The app refuses to boot above 90% projected RSS, and `/readyz` reports measured per-component RSS.
 
-**Disk:** ~9.7 GB lean (includes the `llama3:8b` pull), **~19.6 GB full** (both venvs + both wheelhouses), per BLUEPRINT §8. Plus ~3 GB *transient* for
-`quantize_dynamic`. **Free ≥ 25 GB** before Phase 1; `make doctor` enforces it.
+**Disk:** ~9.7 GB lean *as projected* (that figure includes a `llama3:8b` pull, which was **skipped on
+this host** — subtract ~4.7 GB for the as-provisioned footprint), **~19.6 GB full** (both venvs + both
+wheelhouses), per BLUEPRINT §8. Plus ~3 GB *transient* for `quantize_dynamic`. **Free ≥ 25 GB** before
+Phase 1; `make doctor` enforces it.
 
 ---
 
 ## 7. Build order
+
+**Status (2026-08-01): M-DOCS and M0–M14 are complete, merged and tested; M15 (this docs pass) is in progress.** The order below is the plan as written at M-DOCS.
 
 **M-DOCS first** (see §8) → M0 skeleton → **M1 provision everything (online, longest single item)** → M2 audit spine →
 M3 normalizer → M4 PII → M5 injection → M6 metrics gate → M7 LLM client → M8 ingestion →
@@ -326,9 +353,9 @@ the handbook, ask a question containing an email, show `<EMAIL_ADDRESS_1>` in th
 Ollama alongside a cited grounded answer, then send `ignore all previous instructions` and get a 400
 with an incident ID. **That is your brief's literal claim, demonstrable, offline.**
 
-**Honest scoping:** the full M0–M15 blueprint is **3–6 focused weeks**, not one session. Pushing past
-M13 in one pass yields several half-built subsystems instead of one working demo. I'll build to M10,
-then we reassess.
+**Honest scoping:** the full M0–M15 blueprint was estimated at **3–6 focused weeks**, not one session,
+because pushing past M13 in one pass yields several half-built subsystems instead of one working demo.
+In the event the build reached **M14** (M0–M14 complete, merged and tested); M15 is this docs pass.
 
 ---
 
@@ -352,7 +379,7 @@ This is the **first milestone**, done before any Python. All paths are relative 
 | `docs/BLUEPRINT.md` | **The full 93 KB reconciled spec** — exact API signatures, byte-level file sizes, pinned commit SHAs, the reconciliation ledger, verbatim critique findings. The implementation reference |
 | `docs/ARCHITECTURE.md` | Components, numbered request path C0–C26, ingest path I1–I11, data model, concurrency/RAM model, fail-closed matrix |
 | `docs/THREAT_MODEL.md` | Assets, trust boundaries, actors (**malicious document author is the primary threat**), **OWASP LLM Top 10 2025** mapping with honest partial/strong/weak ratings, four end-to-end attack narratives, residual-risk register |
-| `docs/GUARDRAILS.md` | Every stage: what it catches, thresholds and their derivation, the **metric contract** — floors and definitions now, measurements at M6/M13 — and **known bypasses**. It publishes no measured metric; none exists (§10.2 of that file) |
+| `docs/GUARDRAILS.md` | Every stage: what it catches, thresholds and their derivation, the **metric contract** — floors and definitions, with measurements landed at M6 (`docs/metrics/latest.json`) and revisited at M13/M15 — and **known bypasses** |
 | `docs/AIRGAP_RUNBOOK.md` | Phase-by-phase checklists with expected output per step, incident procedures, decommissioning |
 | `docs/COMPLIANCE.md` | GDPR / HIPAA / NIST SP 800-53 mapping. Boxed non-legal-advice disclaimer. All 18 HIPAA Safe Harbor categories ✅/⚠️/❌ **and a bolded statement that this system does not achieve Safe Harbor** |
 | `docs/EVALUATION.md` | Corpus construction, metric definitions (FPR ≠ 1−precision), how floors were chosen |
@@ -367,10 +394,12 @@ Also in this pass (both done): **`git init`**, and a `.gitignore` excluding `mod
 
 ### Two rules for these docs
 
-1. **Estimates are labelled as estimates.** Every unmeasured number carries an explicit marker until
-   M13 replaces it with a measurement. A compliance doc quoting invented latencies is worse than none.
-2. **Docs are revisited at M13**, when the metrics, RAM figures and evidence report become real. The
-   M-DOCS pass writes them correct-as-of-design; the M13 pass makes them correct-as-measured.
+1. **Estimates are labelled as estimates.** Every unmeasured number carries an explicit marker until a
+   measurement replaces it. A compliance doc quoting invented latencies is worse than none. (Latencies
+   and RAM totals remain estimates today; the M6 metrics and the M1 RSS/parity figures are measured.)
+2. **Docs are revisited at M15**, once the metrics (M6), evidence report (M13) and measured figures
+   become real. The M-DOCS pass writes them correct-as-of-design; **the M15 pass — this one — makes
+   them correct-as-measured.**
 
 ---
 
@@ -404,8 +433,8 @@ def test_final_bytes_were_scanned(spy_scanner, spy_ollama, client):
 
 | | Question | Resolution |
 |---|---|---|
-| OQ-1 | INT8 DeBERTa on-disk size and RSS (**0.30 GB is arithmetic, not measured**) | `07_gates.py` measures and **fails provisioning above 0.35 GB** |
-| OQ-2 | INT8 parity on DeBERTa-v3's disentangled attention — quantizing the relative-position embedding may break it | Hard parity gate; fallback ladder INT8 → FP32 → `llama3.2:1b` |
+| OQ-1 | Injection classifier RSS — **RESOLVED at M1**: measured **0.30 GB** for the **FP32** ONNX session (INT8 rejected — OQ-2); ORT mmaps the weights, so RSS ≪ file size and the RAM budget is unchanged | `07_gates.py` measured it; the gate fails provisioning above 0.35 GB (FP32 passed at 0.30) |
+| OQ-2 | INT8 parity on DeBERTa-v3's disentangled attention — **RESOLVED at M1: it FAILS** (INT8 dynamic quant *inverts* the classifier — `max \|ΔP\| ≈ 0.98`, label flips) | Hard parity gate correctly refused INT8; the fallback ladder selected **FP32 ONNX**, which is the runtime model |
 | OQ-4/5 | Docker `internal: true` + published port; does `enable_ip_masquerade:false` block egress on Docker Desktop? | Phase-0 spike → ADR-0002 (§3) |
 | OQ-6 | Does Presidio's regex timeout propagate out of `analyze()` or get swallowed into a **partial result set**? | Read `PatternRecognizer.__analyze_patterns` before M4 — if swallowed, that is a silent fail-open in the masking layer |
 | OQ-8 | Ollama compute-graph overhead (0.35 GB estimated) | `ollama ps` — a 10-minute measurement that validates the whole RAM table |
@@ -422,10 +451,13 @@ Stated up front because a compliance-themed template that overclaims is worse th
 
 1. **It does not prove the machine cannot reach the internet.** At most it shows that a specific set of
    software controls refused every egress attempt we could construct, on a host separately shown to
-   have working internet moments earlier — and **that demonstration has not been run on this host**:
-   `make verify` and `make verify-online` do not exist yet. The Wi-Fi radio, Thunderbolt, Bluetooth
-   and USB-NIC support all still exist. This is a rigorous, self-auditing **simulation** of an air gap — and it is
-   honest about which of those two words applies.
+   have working internet moments earlier. `make verify` and `make verify-online` now exist and run
+   (M13) — `verify-online` was exercised live (a real 6.58 ms TCP handshake unguarded; `EgressViolation`
+   when enforcing) and the nine offline assertions PASS — **but a green air-gap `PASS` has never been
+   produced**: this host is deliberately kept unsealed (verdict `INVALID` by design), and a real PASS
+   would require a genuine seal plus a physical disconnect. The Wi-Fi radio, Thunderbolt, Bluetooth
+   and USB-NIC support all still exist. This is a rigorous, self-auditing **simulation** of an air gap —
+   and it is honest about which of those two words applies.
 2. **Native code bypasses the Python guard.** `grpcio`'s C core (a hard `qdrant-client` dependency,
    present even in REST mode), ONNX Runtime, and anything reached via `ctypes` can call `connect(2)`
    without entering CPython's socket layer. Only `make seal-pf` closes that category, and only for

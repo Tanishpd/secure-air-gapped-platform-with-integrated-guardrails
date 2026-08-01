@@ -34,9 +34,11 @@ below. If you quote this project anywhere, quote these with it.
    Ollama and Docker are separate processes outside both guard layers entirely. (Items 2 and 3.)
 4. **The evidence signature is self-signed**, by a key generated on the very host it attests to, with
    local-clock timestamps. Not attestation, not non-repudiation. (Items 5, 6 and 7.)
-5. **No metric has been measured. None.** Not one latency figure, RAM figure, recall number or accuracy
-   figure in this repository is a measurement; every one is an estimate, a projection, or a build-gate
-   target. (Item 18.)
+5. **The guardrail metrics are measured; the performance numbers are not.** M6 measured the guardrail
+   corpus (injection headline recall 1.0 and PII recall 1.0 clear their floors; precision 0.81 and benign
+   FPR 0.32 miss theirs — OPEN gaps) and the injection classifier's RSS (0.30 GB, FP32). But **no latency
+   figure and no RAM total** in this repository is a measurement — each is an estimate or a profile-specific
+   projection. (Item 18.)
 
 ---
 
@@ -45,11 +47,14 @@ below. If you quote this project anywhere, quote these with it.
 **Wrongly inferred:** "The box is air-gapped."
 **Actually true:** The strongest claim the design supports is that a specific set of software controls
 was demonstrated to refuse a specific set of egress probes, each paired with a negative control, on a
-host separately shown to have working internet moments earlier. **That demonstration has not been run
-on this host** — `make verify` and `make verify-online` do not exist yet — so today even the weaker
-claim is unearned. The host retains a Wi-Fi radio, Thunderbolt and Ethernet ports, Bluetooth, and USB
-NIC support. What this is designed to be is a rigorous, reproducible, self-auditing **simulation** of an
-air gap, honest about which of those two words applies. It is never a proof.
+host separately shown to have working internet moments earlier. **That demonstration has now been run
+(M13):** `make verify-online` completed a real TCP handshake to `1.1.1.1:443` in 6.58 ms unguarded and
+then raised `EgressViolation` under enforce, and `make verify`'s nine offline assertions pass. What has
+**not** been produced is a green air-gap `PASS` verdict — on this deliberately-unsealed dev host the
+verdict is `INVALID` by design (invariant 13), and the demonstration earns only the narrow claim above.
+The host retains a Wi-Fi radio, Thunderbolt and Ethernet ports, Bluetooth, and USB NIC support. What
+this is designed to be is a rigorous, reproducible, self-auditing **simulation** of an air gap, honest
+about which of those two words applies. It is never a proof.
 **To close it:** Physical removal or destruction of every network interface, in a controlled facility,
 with the removal itself attested by someone other than the operator.
 
@@ -101,8 +106,9 @@ hardware clock the operator cannot set.
 
 **Wrongly inferred:** "The audit log is non-repudiable."
 **Actually true:** Anyone with write access can rebuild the chain from any point, unless the head
-digest has already been exported off-box. Anchoring is *documented* in `OPERATIONS.md` and **not
-implemented**. Do not use the word non-repudiation about this system.
+digest has already been exported off-box. The head digest is produced by `make audit-verify`; recording
+it off-box is a *manual* operator step documented in `OPERATIONS.md` §2 and is **not automated**. Do not
+use the word non-repudiation about this system.
 **To close it:** Implemented, scheduled, verified export of the ledger head to independent storage —
 plus a WORM sink for the events themselves.
 
@@ -122,8 +128,9 @@ independent evaluation of the model itself — see item 16.
 card states verbatim that it **does not detect jailbreak attacks** and does not handle non-English
 prompts. The heuristic rule table carries that load imperfectly. There is no "solved" state, and the
 metric floors (recall ≥0.90, precision ≥0.85, benign FPR ≤0.10) are **build-gate targets, not
-guarantees and not measurements** — no evaluation has been run, and `docs/metrics/latest.json` does not
-exist until `make eval` produces it at M6.
+guarantees**. They have now been measured at M6 — headline recall **1.0** clears its floor, but precision
+**0.81** and benign FPR **0.32 miss** theirs (both OPEN `known_gaps`) — and a passing recall against a
+self-authored corpus is a regression signal, not a guarantee ([EVALUATION.md](EVALUATION.md) §10).
 **To close it:** Nothing closes it. Reduce it with a maintained classifier, ensembling, per-technique
 recall reporting (jailbreak and indirect families reported separately, never averaged), and continuous
 red-teaming against the deployed corpus.
@@ -202,20 +209,24 @@ plus `anyio.CapacityLimiter(2)` is the whole defence.
 **To close it:** More memory, admission control ahead of the model runtime, per-principal queueing
 with backpressure, and a hard cgroup/`ulimit` boundary around each component.
 
-### 18. No number in this repository has been measured
+### 18. The guardrail metrics are measured; latency and RAM are not
 
-**Wrongly inferred:** "The performance numbers are measured." / "The guardrail metrics are results."
-**Actually true:** No benchmark, no evaluation and no provisioning run has executed on this M2. Every
-latency figure and every RAM line item except the 3.00 GB macOS baseline is an **ESTIMATE**; the INT8
-classifier RSS is **UNVERIFIED** (**OQ-1**); and the derived RAM totals are projections that depend on
-which profile you assume — **6.75 GB for the embedded profile, 7.60 GB under `PROFILE=demo`** — so a
-RAM figure quoted without naming its profile is meaningless. Every guardrail metric is likewise
-unmeasured: the floors in [EVALUATION.md](EVALUATION.md) §5 are build-gate targets, `make eval` has
-never run, and `docs/metrics/latest.json` does not exist. The structural conclusions — guardrail
-overhead is a small fraction of generation time, and the injection classifier dominates the guardrail
-budget — are robust to a 2–3× error. The absolute numbers are not.
-**To close it:** M6 for the guardrail metrics, M13 for latency and RAM. Measurements replace estimates,
-and every marker in these documents is removed only when a number behind it has actually been observed.
+**Wrongly inferred:** "The latency and RAM numbers are measured." / "A cleared floor proves the system is safe."
+**Actually true:** Provisioning has run (M1) and the guardrail corpus has been evaluated (M6), so *some*
+numbers are now measured: the injection classifier's session RSS is **0.30 GB** (measured; **FP32** —
+INT8 dynamic quant inverts this DeBERTa-v3, **OQ-1** and **OQ-2** resolved), the embedding parity gate
+passed at **1.6e-07**, and the M6 guardrail metrics are real (recall and PII floors met; precision 0.81
+and benign FPR 0.32 below target — OPEN gaps). But **every latency figure remains an ESTIMATE**, and
+every derived RAM total remains a **PROJECTION** that depends on which profile you assume — **6.75 GB for
+the embedded profile, 7.60 GB under `PROFILE=demo`** — so a RAM figure quoted without naming its profile
+is meaningless. And a measured floor is still not safety: the corpus and the defence share an author
+([EVALUATION.md](EVALUATION.md) §10), so a cleared floor is a regression signal, not a security result.
+The structural conclusions — guardrail overhead is a small fraction of generation time, and the injection
+classifier dominates the guardrail budget — are robust to a 2–3× error. The absolute latency/RAM numbers
+are not.
+**To close it:** M6 delivered the guardrail metrics; full latency and the RAM budget still await a
+measured M13 pass. Measurements replace estimates, and every marker in these documents is removed only
+when a number behind it has actually been observed.
 
 ### 19. `docker exec` egress tests measure the Linux VM, not macOS
 
@@ -253,8 +264,8 @@ the production path. Until the spike runs, the Docker path's isolation is **unte
 | **SCIF** | Physical access control, TEMPEST shielding, and no uncontrolled radios in the space | A laptop on a desk with its Wi-Fi radio switched off in software |
 
 The right way to describe this system is: *a reproducible, self-auditing template for building isolated
-LLM infrastructure, whose controls are designed to be demonstrated individually against paired negative
-controls — a demonstration that has not yet been run — and whose gaps are enumerated above.* Every
-sentence beyond that is a claim someone will eventually have to defend.
+LLM infrastructure, whose controls have been demonstrated individually against paired negative controls
+(M13) — a demonstration, never a proof — and whose gaps are enumerated above.* Every sentence beyond
+that is a claim someone will eventually have to defend.
 
 Section 5 of [THREAT_MODEL.md](THREAT_MODEL.md) carries the full version of this comparison.

@@ -3,11 +3,11 @@
 Records why Chroma was deleted, why embedded Qdrant is the default runtime backend on RAM grounds while `PROFILE=demo` (Docker) is the demonstration and proof path the project targets, and the two genuinely open questions about Docker Desktop network isolation that a Phase-0 spike must resolve.
 
 - **Status:** Proposed — blocked on the Phase-0 spike (OQ-4/OQ-5)
-- **Date:** 2026-07-27
+- **Date:** 2026-07-27 (decision); re-reviewed 2026-08-01
 - **Deciders:** Project architect
 - **Supersedes:** —
 
-> **Until `make spike-docker` runs, the isolation properties of the Docker path are untested and every document must say "untested", not "isolated".**
+> **Re-review 2026-08-01:** the **embedded backend is implemented and works** (M8/M9 — the default runtime path), and `docker-compose.yml` now exists (M14). But `make spike-docker` has **still not been run**, so the Docker path's isolation properties remain **untested** and this ADR stays **Proposed**. Every document must say "untested", not "isolated".
 
 ## Context
 
@@ -15,7 +15,7 @@ Two subsystem specs disagreed: one shipped Chroma, one shipped Qdrant, and a thi
 
 - **The demonstration needs a boundary to point at.** What the project sets out to show is that specific controls refuse specific probes at a network boundary. A container on a Docker network whose `Internal` flag is `true` is an artifact an auditor can inspect (`docker network inspect`); an in-process embedded library is not. `PROFILE=proof` attaches an `alpine:3` prober to the same network and runs egress probes from inside it.
 - **The 8 GB ceiling is hard.** Docker Desktop's Linux VM (capped at 2 GB) plus the Qdrant container at `mem_limit 512m` puts the system at **~7.60 GB of 8 GB in the `PROFILE=demo` (Docker) profile** — no margin. The embedded profile projects **6.75 GB**, leaving 1.25 GB. Both are PROJECTIONS from BLUEPRINT §7, unmeasured; each figure names the profile it assumes.
-- **Feature requirements.** Payload filters on `guard.verdict` (to exclude `quarantined` chunks at query time) and a separate `docs_quarantine` collection. Qdrant provides both directly.
+- **Feature requirements.** Payload filters on `guard.verdict` (to exclude `quarantined` chunks at query time) and a separate never-retrieved `<collection>__quarantine` sibling collection. Qdrant provides both directly.
 - **The Docker daemon is currently stopped** (Docker 29.5.3 installed, not running), so nothing about its network behaviour has been measured on this host.
 
 ## Decision
@@ -93,7 +93,7 @@ docker run --rm --network sagp_vec_noegress alpine:3 \
   sh -c 'wget -q -T3 -O- https://1.1.1.1 >/dev/null && echo FAIL_EGRESS_WORKED || echo OK_BLOCKED'
 ```
 
-Gates (specifications — none of these targets exists yet): `make smoke` check `[ 7/14]` is specified to require the store to initialise in the configured mode. `make verify` under `PROFILE=proof` is specified to add the `.Internal == true` assertion, the prober probes, the DNS test **paired with a positive control** (the prober *can* resolve a sibling service name), and a Docker daemon `>= 26.0.0` check for the CVE-2024-29018 regression. Any high-severity gap left `OPEN` must yield `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS`, never `PASS`.
+Gates: `make smoke` check `[ 7/14]` is implemented and passes — it requires the store to initialise in the configured mode (embedded, on this host). The `PROFILE=proof` Docker assertions remain **specifications blocked on the spike**: `make verify` under `PROFILE=proof` is specified to add the `.Internal == true` assertion, the prober probes, the DNS test **paired with a positive control** (the prober *can* resolve a sibling service name), and a Docker daemon `>= 26.0.0` check for the CVE-2024-29018 regression. None of the Docker-path assertions has been run. Any high-severity gap left `OPEN` must yield `PASS_WITH_OPEN_HIGH_SEVERITY_GAPS`, never `PASS`.
 
 ---
 
