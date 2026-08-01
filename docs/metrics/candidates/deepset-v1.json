@@ -1,0 +1,51 @@
+{
+  "baseline": {
+    "benign_fpr": 0.24,
+    "family_b_recall": 1.0,
+    "family_f_recall": 1.0,
+    "headline_recall": 1.0,
+    "misses": [],
+    "per_family": {
+      "A": 1.0,
+      "B": 1.0,
+      "C": 1.0,
+      "D": 1.0,
+      "E": 1.0,
+      "F": 1.0,
+      "G": 1.0,
+      "H": 1.0,
+      "I": 1.0
+    },
+    "precision": 0.8537
+  },
+  "candidate": "deepset/deberta-v3-base-injection",
+  "candidate_metrics": {
+    "benign_fpr": 0.44,
+    "family_b_recall": 1.0,
+    "family_f_recall": 1.0,
+    "headline_recall": 1.0,
+    "misses": [],
+    "per_family": {
+      "A": 1.0,
+      "B": 1.0,
+      "C": 1.0,
+      "D": 1.0,
+      "E": 1.0,
+      "F": 1.0,
+      "G": 1.0,
+      "H": 1.0,
+      "I": 1.0
+    },
+    "precision": 0.7609
+  },
+  "detail": "recall held but neither benign FPR nor precision improved over the baseline \u2014 no reason to take on the swap risk.",
+  "method": "torch, method held constant across baseline+candidate; truncate@max_length (== ONNX windowing for all corpus items). Accuracy is comparable; RSS/latency are not.",
+  "policy_sha256": "462e22bbba17050b27746a9f720bc3db7bca4cbb1daf95a18880f296a89e0f66",
+  "recall_regressions": [],
+  "size_proxy": {
+    "baseline_params_m": 184.4,
+    "candidate_params_m": 184.4,
+    "note": "params only. Deployed RSS/latency need ONNX export + 07_gates measurement \u2014 torch here is not the ONNX session."
+  },
+  "verdict": "NO_IMPROVEMENT"
+}

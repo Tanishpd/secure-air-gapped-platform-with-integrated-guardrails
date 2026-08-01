@@ -609,3 +609,37 @@ Until at least the first two exist, the correct framing for every number in
 to tell you when a change made things worse than they were yesterday. It is not evidence that the
 system is safe today, and [GUARDRAILS.md](GUARDRAILS.md) and [README.md](../README.md) must not
 present it as such.
+
+## 11. Evaluating a replacement injection classifier
+
+The one measured gap that tuning cannot close is the benign FPR (0.24 vs a 0.10 target): every residual
+false positive is the archived classifier over-firing on quoted-attack English or on non-English text
+(§5, [GUARDRAILS.md](GUARDRAILS.md) §11). Closing it needs a **better model**, and swapping a security
+classifier blind is exactly how you trade a benign-FPR win for an attack you no longer catch. So the
+swap is a gated, evidence-based operation.
+
+**The bake-off** (`scripts/eval_classifier_candidate.py`, `make eval-candidate CANDIDATE=… NAME=…`)
+runs in `.venv-provision` (torch/transformers) and scores a candidate through the **real** decision
+path — the same `InjectionScanner`, `decide_injection`, heuristics and thresholds as production — over
+the same `attacks.jsonl` / `benign.jsonl`. The scoring **method is held constant** (torch for both
+baseline and candidate), so a difference in the numbers is a difference in the *model*, not the runner;
+the runtime FP32 ONNX was already gated to match torch within parity at provision, so the torch-baseline
+stands in for it. It writes a scorecard to [`docs/metrics/candidates/`](metrics/candidates/).
+
+**The swap-gate** (`src/sagp/guardrails/candidate_gate.py`, unit-tested in `tests/unit/test_candidate_gate.py`)
+is invariant 12 made mechanical:
+
+| verdict | condition |
+|---|---|
+| `REJECT_RECALL_REGRESSION` | any gated family (A,C,D,E,G,H,I + B jailbreak + F indirect) lost recall vs baseline — hard stop, any FPR gain notwithstanding |
+| `REJECT_UNRESOLVABLE_LABELS` | opaque `LABEL_n` labels — no INJECTION index resolvable (invariant 5) |
+| `RECOMMEND_PROCEED_TO_EXPORT` | recall held **and** FPR or precision improved → advance to ONNX export + `07_gates` parity/RSS, **not** deploy |
+| `NO_IMPROVEMENT` | recall held but the ceiling did not move |
+
+**Measured so far.** Baseline-vs-baseline reproduces `latest.json` exactly (recall 1.0, precision 0.854,
+FPR 0.24), confirming the torch stand-in. The v1 ancestor `deepset/deberta-v3-base-injection` holds
+recall on every family but nearly **doubles** benign FPR (0.24 → 0.44, precision 0.85 → 0.76) →
+`NO_IMPROVEMENT` — data quantifying why v2 is the baseline, and the gate declining a worse model. The
+real target, **Llama Prompt Guard 2** (multilingual, lower-FPR, maintained), is `gated=manual` on
+Hugging Face: it needs an accepted Meta licence + an HF token this host does not have. When that exists,
+it runs through this identical gate — no code change.

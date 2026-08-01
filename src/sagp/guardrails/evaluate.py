@@ -16,14 +16,19 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sagp.guardrails import deobfuscate, heuristics
 from sagp.guardrails.injection.scanner import InjectionScanner
 from sagp.guardrails.normalize import BLOCKING_FLAGS, has_blocking_flag, normalize
-from sagp.guardrails.pii import PiiGuardrail
 from sagp.guardrails.policy import GuardrailsPolicy
 from sagp.types import InjectionVerdict
+
+if TYPE_CHECKING:
+    # Only a type annotation on evaluate_pii (string at runtime via `from __future__`).
+    # Kept out of the module top level so the injection-eval path does not pull in the
+    # Presidio/spaCy stack — lets the classifier bake-off import this in .venv-provision.
+    from sagp.guardrails.pii import PiiGuardrail
 
 HEADLINE_FAMILIES = ("A", "C", "D", "E", "G", "H", "I")
 

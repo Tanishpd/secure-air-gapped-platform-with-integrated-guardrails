@@ -10,3 +10,9 @@ onnxruntime[quantization]==1.28.0
 sentence-transformers==5.6.1
 psutil==7.1.0
 pytest==9.1.1
+# The classifier bake-off (scripts/eval_classifier_candidate.py) imports the sagp
+# guardrail logic (torch-free, presidio-free after the evaluate.py decoupling) to
+# score a candidate through the real decision path. These two are all it needs from
+# the runtime side — NOT the whole runtime closure (that would defeat the two-venv split).
+pydantic==2.13.4
+pyyaml==6.0.3
