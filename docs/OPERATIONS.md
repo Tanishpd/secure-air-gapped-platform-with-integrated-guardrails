@@ -145,7 +145,7 @@ Procedure:
    the gates exist for.
 5. `make eval`. Any metric more than 2pp below the baseline in `docs/metrics/latest.json` fails the build.
    That file **exists** and carries the committed M6 baseline (headline recall 1.0, PII recall 1.0;
-   precision 0.81 and benign FPR 0.32 tracked as OPEN `known_gaps`), so both the 2pp regression gate and
+   precision 0.854 meets its target, benign FPR 0.24 still over 0.10 and tracked as the one OPEN `known_gap`), so both the 2pp regression gate and
    the absolute floors ([Evaluation](EVALUATION.md) §5) apply. If the new model is genuinely better, commit
    the new baseline; if it is worse, that is the answer.
 6. **If the embedder changed, re-ingest everything.** Old points carry the old `embed_revision` and will not
@@ -218,8 +218,8 @@ to check on a schedule, and what each one means.
 **Note on p50/p95 targets: there are none yet.** All latency figures in the source design are ESTIMATES and
 no latency benchmark has been run — establish your own baseline over the first week of real traffic and
 compare against that, not against a number from a document. The guardrail *quality* metrics, by contrast,
-are measured and committed (M6, `docs/metrics/latest.json`: recall and PII floors met; precision 0.81 and
-benign FPR 0.32 below target). RAM totals remain profile-specific projections (6.75 GB embedded, 7.60 GB
+are measured and committed (M6, `docs/metrics/latest.json`: recall and PII floors met; precision 0.854 now
+meets its target, benign FPR 0.24 still below its 0.10 target). RAM totals remain profile-specific projections (6.75 GB embedded, 7.60 GB
 demo/Docker, against an 8 GB ceiling); the injection classifier's own session RSS is measured at 0.30 GB
 (FP32).
 

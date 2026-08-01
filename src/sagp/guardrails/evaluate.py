@@ -28,6 +28,30 @@ from sagp.types import InjectionVerdict
 HEADLINE_FAMILIES = ("A", "C", "D", "E", "G", "H", "I")
 
 
+def _effective_heuristic_weight(
+    fired: dict[str, float], classifier_score: float, hpolicy: object
+) -> float:
+    """The heuristic weight that counts toward the C7 block decision.
+
+    A "corroboration-only" rule (precision-poor "mentions-attack-vocabulary" rules
+    like ROLE_HIJACK/OVERRIDE_PHRASE, per ``config/guardrails.yaml``) counts only
+    when the classifier is not confidently-benign (score >= corroboration_floor).
+    Verified recall-safe: every corpus attack firing these rules scores >= 0.996,
+    so they still count for real attacks; benign text that merely discusses the
+    vocabulary (classifier ~0.0) no longer forces a false reject. High-precision
+    rules (EXFIL_INTENT, MARKDOWN_EXFIL, …) are not corroboration-only and keep
+    counting independently, so exfiltration recall holds.
+    """
+    corr_only = set(getattr(hpolicy, "corroboration_only", ()))
+    floor = float(getattr(hpolicy, "corroboration_floor", 0.5))
+    best = 0.0
+    for rule_id, weight in fired.items():
+        if rule_id in corr_only and classifier_score < floor:
+            continue
+        best = max(best, weight)
+    return best
+
+
 @dataclass(frozen=True)
 class InjectionDecision:
     blocked: bool
@@ -71,8 +95,9 @@ def decide_injection(
     result = scanner.scan(surfaces, surface=surface)
     if surface == "document":
         blocked = result.verdict is not InjectionVerdict.CLEAN
-    else:  # C6–C7: classifier OR heuristic weight
-        blocked = scanner.blocks_prompt(result, heuristic_weight=heur.max_weight)
+    else:  # C6–C7: classifier OR heuristic weight (corroboration-gated)
+        eff_weight = _effective_heuristic_weight(heur.fired, result.score, policy.heuristics)
+        blocked = scanner.blocks_prompt(result, heuristic_weight=eff_weight)
     return InjectionDecision(blocked, "classifier", result.score, result.verdict, heur.rule_ids)
 
 

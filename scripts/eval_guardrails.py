@@ -93,9 +93,12 @@ def run() -> dict[str, Any]:
                 "target": floors["benign_fpr_ceiling"],
                 "severity": "medium",
                 "status": "OPEN",
-                "cause": "same as injection_precision; the 30%+ hard-negative corpus is designed "
-                "to stress FPR, and the classifier flags non-English (BH-011/012) and quoted-attack "
-                "benign text. Reducing this needs a better classifier or context-aware rules (post-M6).",
+                "cause": "after the corroboration-gating fix (precision-poor lexical rules require "
+                "classifier corroboration), every remaining false positive is the archived DeBERTa "
+                "classifier over-firing at score >= 0.99 on English benign text that QUOTES an attack "
+                "(BH-001/003/007/010) or on non-English benign text (BH-011 Hindi, BH-012 Arabic). "
+                "This is the model's documented ceiling; closing it needs a better classifier, not "
+                "tuning. Recall stays 1.0.",
             }
         )
 

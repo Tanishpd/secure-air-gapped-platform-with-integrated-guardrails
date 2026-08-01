@@ -272,8 +272,8 @@ make eval            # corpus metrics -> docs/metrics/latest.json  (commit this 
 `make seal` refuses without `evidence/verify-online-<gen>.json` carrying `all_probes_blocked == true`.
 
 `docs/metrics/latest.json` **exists** — first produced by `make eval` at M6. Measured headline injection
-recall is **1.0** and PII recall **1.0** for the four covered entities; precision **0.81** and benign FPR
-**0.32** miss their 0.85 / 0.10 targets and are tracked as OPEN `known_gaps` (medium). Those measurements
+recall is **1.0** and PII recall **1.0** for the four covered entities; precision **0.854** now meets its
+0.85 target; benign FPR **0.24** still misses its 0.10 target and remains the one OPEN `known_gap` (medium). Those measurements
 are now the regression baseline: the recall and PII floors in [Evaluation](EVALUATION.md) §5 are hard
 gates, precision/FPR are regression-gated.
 

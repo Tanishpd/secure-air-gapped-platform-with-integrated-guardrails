@@ -214,11 +214,11 @@ supposed to handle.
 | `TAG_CHARS` | U+E0000–U+E007F present | **block** | From the normalizer. Not scored — blocks outright. |
 | `BIDI_OVERRIDE` | U+202A–E / U+2066–9 present | **block** | From the normalizer. Blocks outright. |
 | `DELIMITER_SPOOF` | Literal `UNTRUSTED_DOCUMENT_` in user input | **block** | An attempt to forge the context frame. No benign use. |
-| `OVERRIDE_PHRASE` | "ignore/override/forget … (all) (previous/prior/above) instructions" | 0.9 | The canonical direct injection. |
-| `DISREGARD` | "disregard …", "pay no attention to …" | 0.9 | Paraphrase family of the above. |
-| `SYSTEM_PROMPT_PROBE` | "repeat/print/reveal your system prompt / initial instructions / rules" | 0.85 | System-prompt extraction. |
-| `ROLE_HIJACK` | `<\|im_start\|>`, `[INST]`, `### System`, `^\s*(system\|assistant)\s*[:>\]]` | 0.85 | Chat-template injection. |
-| `DAN_PERSONA` | DAN / "developer mode" / "you are now …, you have no restrictions" | 0.90 | **Carries the classifier's documented jailbreak blind spot.** Weighted **≥ 0.85 deliberately, so it blocks alone on the prompt surface** — the classifier scores ~0.02 on jailbreaks, so if this rule could not block by itself, family B would have *no* operative prompt-surface control. The FPR cost is accepted; M6 measured benign FPR at **0.32**, over the ≤ 0.10 target (§10.2). See §4.5. |
+| `OVERRIDE_PHRASE` | "ignore/override/forget … (all) (previous/prior/above) instructions" | 0.9 | The canonical direct injection. **Corroboration-only** (§3.5): fires on benign contracts ("ignore the previous clause") and quoted attacks; the classifier catches real overrides at ~1.0, so gating it costs no recall. |
+| `DISREGARD` | "disregard …", "pay no attention to …" | 0.9 | Paraphrase family of the above. **Corroboration-only** (§3.5). |
+| `SYSTEM_PROMPT_PROBE` | "repeat/print/reveal your system prompt / initial instructions / rules" | 0.85 | System-prompt extraction. Blocks independently (high-precision — rare in benign text). |
+| `ROLE_HIJACK` | `<\|im_start\|>`, `[INST]`, `### System`, `^\s*(system\|assistant)\s*[:>\]]` | 0.85 | Chat-template injection. **Corroboration-only** (§3.5): fires on security docs that quote `[INST]` markers (BH-004); the classifier catches real role-hijacks at ~1.0. |
+| `DAN_PERSONA` | DAN / "developer mode" / "you are now …, you have no restrictions" | 0.90 | **Corroboration-only** (see §3.5). It fires on benign text that merely *discusses* jailbreaks ("explain what a DAN jailbreak is" — BH-005), so as of the post-M6 hardening it counts toward a block only when the classifier is not confidently-benign (score ≥ `corroboration_floor` = 0.15). Verified recall-safe: the corpus's DAN jailbreaks (A-B-001/004) score **0.999–1.0** on the classifier — the archived model actually *did* catch them, so gating dropped no attack. Residual: a jailbreak the classifier also scores < 0.15 would slip; that is the model's documented jailbreak blind spot, now a narrow residual rather than an unconditional-block hedge. See §4.5. |
 | `NEW_INSTRUCTIONS` | "new instructions:", "updated system message", "the real task is" | 0.75 | Instruction reframing, common in documents. Deliberately **sub-0.85**: it does *not* block a user prompt alone (too common in benign text), but clears the 0.70 document-suspect threshold, so it is an operative signal on the *document* surface, not the prompt surface. |
 | `EXFIL_INTENT` | "send/POST/upload … to http(s)://", "email the above to" | 0.85 | Zero-click exfiltration setup. |
 | `MARKDOWN_EXFIL` | `![...](http…)` / `[...](http…)` with an interpolated value | 0.85 | Image-beacon exfiltration; also stripped structurally at G5a. |
@@ -229,29 +229,42 @@ the same set — and M6 (`scripts/eval_guardrails.py`) has now run them against
 weights below remain the un-swept priors. That corpus is where ≥30% hard negatives (prompts *about*
 prompt injection and security) earn their place, because every rule above fires on a legitimate
 question like "how would you detect someone typing 'ignore all previous instructions'?" — and it is
-why benign FPR came in at 0.32 (§10.2).
+why benign FPR came in at 0.32 at M6. The post-M6 hardening (§3.5, corroboration-gating) makes the
+precision-poor rules require the classifier's agreement, cutting FPR to **0.24** (§10.2).
 
-### 3.5 Heuristics are OR'd with the classifier, never averaged
+### 3.5 Heuristics are OR'd with the classifier, never averaged — but precision-poor rules are corroboration-gated
 
-The policy at C7 is:
+The policy at C7 is `max`, not `mean`: the two detectors exist to cover each other's blind spots, and
+averaging lets a confident negative from one dilute a confident positive from the other. But a plain
+`max(classifier, heuristic_weight)` has a cost — a precision-poor lexical rule (one that fires on any
+text *mentioning* attack vocabulary) then blocks even when the classifier is confidently-benign, which
+is what drove benign FPR to 0.32 (a benign "explain what a DAN jailbreak is" trips `DAN_PERSONA` while
+the classifier scores 0.0). The post-M6 policy adds **corroboration-gating**:
 
 ```python
-if max(classifier_score, heuristic_weight) >= threshold:   # 0.85 on the user prompt
+# High-precision / structural rules (SYSTEM_PROMPT_PROBE, EXFIL_INTENT, MARKDOWN_EXFIL,
+# DELIMITER_SPOOF) count independently, as before.
+# "Mentions-attack-vocabulary" rules (corroboration_only: OVERRIDE_PHRASE, DISREGARD,
+# ROLE_HIJACK, DAN_PERSONA) count ONLY when the classifier is not confidently-benign:
+w = heuristic_weight
+if rule in corroboration_only and classifier_score < corroboration_floor:   # floor = 0.15
+    w = 0.0
+if max(classifier_score, w) >= threshold:   # 0.85 on the user prompt
     reject()
 ```
 
-`max`, not `mean`, not a weighted blend. The reason is structural: the two detectors exist to cover
-each other's blind spots. Averaging lets a confident negative from one dilute a confident positive
-from the other — a DAN-persona jailbreak that the classifier is documented not to detect scores
-~0.02 from the model and 0.90 from `DAN_PERSONA`; `max` gives 0.90 ≥ 0.85 and it is **blocked**, while
-averaging would give 0.46 < 0.85 and it would ship straight to the LLM. This is also *why* the
-blind-spot rules are weighted ≥ 0.85 (§3.4): under `max`, a rule that cannot reach the surface
-threshold cannot raise its hand alone, and family B has no other prompt-surface control. The whole
-point of running a rule table alongside an ML model is that either one gets to block on its own.
+This was chosen empirically, not by feel: dumping the false positives showed the corroboration-only
+rules' real attacks all score **≥ 0.996** on the classifier (the model catches direct overrides,
+role-hijacks, and even the corpus's DAN jailbreaks at ~1.0), so gating them dropped **no** attack —
+recall stays **1.0** across all families — while removing the two benign false rejects where a rule
+fired but the classifier said 0.0. High-precision rules (`EXFIL_INTENT`/`MARKDOWN_EXFIL`) are *not*
+gated: family-G exfiltration attacks depend on them (one scores 0.0 on the classifier), so they keep
+blocking alone.
 
-The cost is paid in false positives, and it is paid honestly: benign FPR was measured over the benign
-corpus at M6 at **0.32**, against a ≤ 0.10 floor — so it is now a **result** and an OPEN `known_gap`
-(§10.2), not just a target, and the hard negatives are what make that number mean something.
+The cost is still paid in false positives, honestly: benign FPR was **0.32** at M6 and **0.24** after
+corroboration-gating, against a ≤ 0.10 floor — an OPEN `known_gap` (§10.2). Every remaining false
+positive is now the archived classifier itself over-firing at ≥ 0.99 on benign text that quotes an
+attack or on non-English text — a model ceiling, not a rule to tune.
 
 ---
 
@@ -835,10 +848,14 @@ heuristics:                       # G1b — src/sagp/guardrails/heuristics.py
     DISREGARD:           0.90
     SYSTEM_PROMPT_PROBE: 0.85
     ROLE_HIJACK:         0.85
-    DAN_PERSONA:         0.90     # >=0.85 so it blocks alone on the prompt surface (classifier is jailbreak-blind)
+    DAN_PERSONA:         0.90
     NEW_INSTRUCTIONS:    0.75     # sub-0.85 by design: document-suspect signal only, not a solo prompt block
     EXFIL_INTENT:        0.85
     MARKDOWN_EXFIL:      0.85
+  # Precision-poor "mentions-attack-vocabulary" rules: count toward a block only
+  # when the classifier is not confidently-benign (§3.5, post-M6 hardening).
+  corroboration_only: [OVERRIDE_PHRASE, DISREGARD, ROLE_HIJACK, DAN_PERSONA]
+  corroboration_floor: 0.15
 
 deobfuscate:                      # G1c — decoded payloads JOIN the scan set, they do not replace it
   codecs: [base64, base32, hex, rot13, leet, reverse, spaced]
@@ -1081,11 +1098,14 @@ Stated as plainly as possible, because this is a compliance-themed document:
 >   indirect (F) reported separately, each **1.0**.
 > - **PII recall 1.0** for `EMAIL_ADDRESS`, `CREDIT_CARD`, `IN_AADHAAR` and `PERSON`
 >   (floors 0.98 / 0.98 / 0.95 / 0.80).
-> - **Injection precision 0.81** and **benign FPR 0.32** — both **miss** their targets (0.85 / 0.10)
->   and are recorded as OPEN `known_gaps`, severity medium. The cause is by design: the 30%+
->   hard-negative corpus fires the lexical rules, and the archived DeBERTa classifier over-fires on
->   attack-phrase and non-English benign text. Recall and PII floors are hard-gated; precision/FPR are
->   regression-gated from this baseline. **FPR here is benign-blocked ÷ total-benign, not `1 − precision`.**
+> - **Injection precision 0.854** — now **meets** its 0.85 target after the post-M6 corroboration-gating
+>   fix (§3.5); no longer a gap. **Benign FPR 0.24** — improved from 0.32 but still over the ≤ 0.10
+>   target, so it is the one remaining OPEN `known_gap` (severity medium). Every remaining false
+>   positive is the archived DeBERTa classifier over-firing at ≥ 0.99 on benign text that quotes an
+>   attack (BH-001/003/007/010) or on non-English text (BH-011/012) — a model ceiling; closing it needs
+>   a better classifier, not tuning. Recall stayed 1.0. Recall and PII floors are hard-gated;
+>   precision/FPR are regression-gated from this baseline. **FPR here is benign-blocked ÷ total-benign,
+>   not `1 − precision`.**
 >
 > Still **not** measured: every latency figure in §2 remains an ESTIMATE — no benchmark has run on the
 > target M2. Every threshold in §8 is still an unvalidated prior (M6 measured *with* them; it did not

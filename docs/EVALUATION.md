@@ -23,8 +23,8 @@ a real run rather than nothing.
 
 The measured headline (see §6 and `docs/metrics/latest.json`): injection headline recall **1.0**, and PII
 recall **1.0** for EMAIL_ADDRESS / CREDIT_CARD / IN_AADHAAR / PERSON — both clear their floors — while
-injection precision **0.81** and benign FPR **0.32 miss** their targets (0.85 / 0.10) and are tracked as
-OPEN `known_gaps` (severity medium). These numbers were measured over the **current** corpus (39 attacks,
+injection precision **0.854** now **meets** its 0.85 target, while benign FPR **0.24** still **misses** its
+0.10 target and remains the one OPEN `known_gap` (severity medium). These numbers were measured over the **current** corpus (39 attacks,
 25 benign of which 13 are hard negatives, 18 PII cases); it is smaller than the construction targets in §2
 and grows toward them.
 
@@ -313,7 +313,7 @@ visible.
 **Every value in this section is a build-gate target — the number a build must clear, not a coverage
 claim.** As of M6 they are checked against a real run: `make eval` has run and `docs/metrics/latest.json`
 is committed (§6). Recall and the PII floors are **hard-gated**; injection precision and benign FPR are
-**regression-gated** from the baseline and currently sit below target as OPEN `known_gaps`. Clearing a
+**regression-gated** from the baseline — precision now meets its 0.85 target, while benign FPR still sits below target as the one OPEN `known_gap`. Clearing a
 floor is evidence the system behaves as specified on inputs we enumerated — never, on its own, evidence of
 detection coverage (§10).
 
@@ -365,15 +365,14 @@ entries also carry `tp`/`fn` counts in the real file) is:
     "pii_recall": {"EMAIL_ADDRESS": 0.98, "CREDIT_CARD": 0.98, "IN_AADHAAR": 0.95, "PERSON": 0.80}
   },
   "injection": {
-    "headline_recall": 1.0, "precision": 0.814, "benign_fpr": 0.32,
-    "counts": {"headline_tp": 31, "headline_fn": 0, "benign_blocked": 8, "benign_total": 25},
+    "headline_recall": 1.0, "precision": 0.8537, "benign_fpr": 0.24,
+    "counts": {"headline_tp": 31, "headline_fn": 0, "benign_blocked": 6, "benign_total": 25},
     "family_b_recall": 1.0, "family_f_recall": 1.0,
     "per_family": {"A": 1.0, "C": 1.0, "D": 1.0, "E": 1.0, "G": 1.0, "H": 1.0, "I": 1.0}
   },
   "pii_recall": {"EMAIL_ADDRESS": 1.0, "CREDIT_CARD": 1.0, "IN_AADHAAR": 1.0, "PERSON": 1.0},
   "known_gaps": [
-    {"metric": "injection_precision", "measured": 0.814, "target": 0.85, "severity": "medium", "status": "OPEN"},
-    {"metric": "benign_fpr",          "measured": 0.32,  "target": 0.10, "severity": "medium", "status": "OPEN"}
+    {"metric": "benign_fpr", "measured": 0.24, "target": 0.10, "severity": "medium", "status": "OPEN"}
   ],
   "policy_sha256": "57b4d4ab…",
   "note": "MEASURED on this host. Recall + PII floors are hard gates; precision/FPR are targets tracked in known_gaps."

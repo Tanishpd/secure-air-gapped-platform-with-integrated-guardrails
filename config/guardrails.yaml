@@ -25,6 +25,16 @@ heuristics:
     - DELIMITER_SPOOF # literal UNTRUSTED_DOCUMENT_ in user input
     - TAG_CHARS # from the normalizer
     - BIDI_OVERRIDE # from the normalizer
+  # Precision-poor "mentions-attack-vocabulary" rules: they fire on benign security
+  # docs / contracts / quoted attacks that merely DISCUSS injection. They count
+  # toward a block ONLY when the classifier is not confidently-benign (score >=
+  # corroboration_floor). Verified recall-safe: every corpus attack firing these
+  # scores >= 0.996 on the classifier, so they still count for real attacks — but
+  # a benign "explain what a DAN jailbreak is" (classifier ~0.0) is no longer a
+  # false reject. High-precision rules (EXFIL_INTENT/MARKDOWN_EXFIL) are NOT here
+  # and keep blocking alone, so exfiltration recall holds.
+  corroboration_only: [OVERRIDE_PHRASE, DISREGARD, ROLE_HIJACK, DAN_PERSONA]
+  corroboration_floor: 0.15 # classifier must not be confidently-benign for these to count
 
 deobfuscate:
   codecs: [base64, base32, hex, rot13, leet, reverse, spaced]

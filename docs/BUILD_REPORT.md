@@ -72,7 +72,7 @@ construction.
 |---|---|---|
 | Injection recall (headline families A,C,D,E,G,H,I; B and F reported apart) | **1.0** | small corpus; regression-gated |
 | PII recall — EMAIL_ADDRESS, CREDIT_CARD, IN_AADHAAR, PERSON | **1.0** | build gate cleared; not a coverage guarantee |
-| Injection precision / benign FPR | **0.81 / 0.32** | both **miss** targets (0.85 / 0.10) — tracked as OPEN, medium-severity gaps |
+| Injection precision / benign FPR | **0.854 / 0.24** | after the corroboration-gating fix: precision now **meets** 0.85; FPR improved from 0.32 but still over 0.10 (one OPEN gap — the archived classifier's ceiling) |
 | Injection ONNX session RSS | **0.30 GB** | FP32 (INT8 dynamic quant *inverts* this DeBERTa-v3 — OQ-2); ORT mmaps weights |
 | Embedding parity vs sentence-transformers | **1.6e-07** | bge-small ONNX, CLS pooling |
 | Online negative control | **6.58 ms** | live TCP handshake to `1.1.1.1:443` unguarded → `EgressViolation` when enforced |
