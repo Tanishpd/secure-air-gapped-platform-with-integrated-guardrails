@@ -15,7 +15,7 @@ MYPY    := "$(VENV)/bin/mypy"
 PYTEST  := "$(VENV)/bin/pytest"
 
 .PHONY: help doctor venvs install install-provision lint format typecheck test test-ci clean \
-        provision verify-manifest audit-verify eval samples \
+        provision verify-manifest audit-verify eval eval-candidate samples \
         verify verify-online evidence proof smoke \
         seal unseal serve airgap-status spike-docker seal-pf unseal-pf \
         ingest query up ollama-up ollama-down
@@ -73,6 +73,11 @@ provision:  ## PROVISION EVERYTHING (online, one-way door): steps 01..10 in orde
 	$(PYTHON) scripts/provision/09_secrets.py
 	$(PYTHON) scripts/provision/10_manifest.py
 	@echo "provision complete — run 'make verify-manifest'"
+
+eval-candidate:  ## Injection-classifier bake-off (online, provision venv): CANDIDATE=<repo> NAME=<slug>
+	@test -n "$(CANDIDATE)" || { echo "usage: make eval-candidate CANDIDATE=<hf-repo-or-dir> NAME=<slug>"; exit 2; }
+	@test -n "$(NAME)" || { echo "usage: make eval-candidate CANDIDATE=<hf-repo-or-dir> NAME=<slug>"; exit 2; }
+	PYTHONPATH="$(PWD)/src" $(PROV_PY) scripts/eval_classifier_candidate.py --candidate "$(CANDIDATE)" --name "$(NAME)"
 
 verify-manifest:  ## Full manifest verification (recompute every hash + signature)
 	$(PYTHON) -m sagp.netguard.manifest

@@ -137,6 +137,15 @@ self-authored corpus is a regression signal, not a guarantee ([EVALUATION.md](EV
 **To close it:** Nothing closes it. Reduce it with a maintained classifier, ensembling, per-technique
 recall reporting (jailbreak and indirect families reported separately, never averaged), and continuous
 red-teaming against the deployed corpus.
+**Swapping the classifier is now a gated, evidence-based operation, not a leap of faith.** The bake-off
+harness (`scripts/eval_classifier_candidate.py`, `make eval-candidate`) scores any candidate through the
+*real* decision path over the same corpus, and the swap-gate (`candidate_gate.py`, invariant 12) is
+**hard on recall regression** — a replacement that lowers attack recall on any family is rejected
+regardless of any FPR gain. Validated on the v1 ancestor (`deepset/deberta-v3-base-injection`), which
+holds recall but nearly doubles benign FPR (0.24 → 0.44) → correctly `NO_IMPROVEMENT`. The classifier
+best positioned to close the ceiling — **Llama Prompt Guard 2** (multilingual, lower-FPR, maintained) —
+is `gated=manual` on Hugging Face: it needs an accepted Meta licence + an HF token this host does not
+have, at which point it drops straight into the gate. See [docs/metrics/candidates/](metrics/candidates/).
 
 ### 10. Presidio recall is not 100%
 
