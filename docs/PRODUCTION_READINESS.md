@@ -42,7 +42,7 @@ the physical seal + disconnect.
 | Egress guard importable | GREEN | `sagp.netguard.egress` |
 | CI configured | GREEN | `.github/workflows/ci.yml` (Actions SHA-pinned, node24) |
 | Dependency CVE scan | GREEN | `make audit-deps` (`pip-audit`) — no known vulnerabilities; CI gate |
-| SAST | GREEN | `make sast` (bandit over `src/sagp`) — no findings; CI gate (deeper CodeQL needs GHAS or a public repo) |
+| SAST | GREEN | `make sast` (bandit) — no findings; CI gate. Dormant CodeQL workflow auto-activates when the repo is made public |
 | SBOM | GREEN | `make sbom` → `sbom.cdx.json` (CycloneDX 1.6, 84 runtime components) |
 | Disclosure policy | GREEN | `SECURITY.md` (scope + threat model); Dependabot watches deps + pinned Actions |
 | App image builds | GREEN | `docker build` → 639 MB, `import sagp` OK (Linux shape; caveats in `Dockerfile`) |
