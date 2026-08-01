@@ -149,6 +149,7 @@ Every task is to run through the Makefile (`.SHELLFLAGS := -eu -o pipefail -c`);
 | `make smoke` | 14 numbered PASS/FAIL checks; `--fast` uses `FakeLLM` | no | yes |
 | **DEV** | | | |
 | `make lint` / `typecheck` / `test` | Fast suites, `FakeLLM` + `FakeScorer`; `make test-all` / `test-e2e` add the `needs_models` / `needs_ollama` markers | no | yes |
+| `make test-ci` | The model-free subset CI runs (`-m "not needs_models and not needs_ollama"`); tool paths overridable (`PYTEST=`/`RUFF=`/`MYPY=`) | no | yes |
 
 ---
 
@@ -215,10 +216,13 @@ Re-provisioning is: `make unseal REASON="add pypdf 6.15.0"` → reconnect → `m
 
 ```bash
 make test        # unit + integration, FakeLLM + FakeScorer, no models — the loop you run constantly
+make test-ci     # the model-free subset CI runs: -m "not needs_models and not needs_ollama"
 make test-all    # adds needs_models (real ONNX + spaCy) and needs_ollama
 make test-e2e    # golden path against real models and a real Ollama; the air-gap probe set in-process
 make eval        # metrics gates; writes docs/metrics/latest.json at M6
 ```
+
+**CI** (`.github/workflows/ci.yml`, added at M14) runs `make lint typecheck test-ci` on every push and PR, on `ubuntu-latest` with `pip install -e '.[dev]'` — **not** the hash-pinned runtime lock, whose macOS/arm wheel hashes would not match Linux. CI has no provisioned artifacts and no Ollama, so `test-ci` selects only model-free tests. The selection is **not** a hand-maintained list: `tests/conftest.py::pytest_collection_modifyitems` reads each test's (transitive) `fixturenames` and auto-applies `needs_models` to anything that pulls a real ORT/spaCy/Presidio fixture (`injection_scanner`, `bge_embedder`, `chunk_tokenizer`, `pii_guardrail`, `chat_engines`, `client`) and `needs_ollama` to anything using `ollama_client`. Add a test, it self-classifies. The Makefile targets take tool-path overrides (`make lint RUFF=ruff`, `typecheck MYPY=mypy`, `test-ci PYTEST=pytest`) so CI drives the *same* target definitions off `PATH` instead of `./.venv` — one source of truth, no drift. Model/Ollama coverage still runs locally via `make test-all` / `test-e2e` on a provisioned host (268 tests full; 193 in the CI subset, MEASURED 2026-08-01).
 
 No test exists yet and none has been run (§10); everything here is the specified shape of the suite. Markers are to be gated in `tests/conftest.py`: `needs_models` requires `models/` to verify against `MANIFEST.json`; `needs_ollama` requires a reachable `127.0.0.1:11434` with the pinned tag present. Roughly 90% of the suite should use `FakeLLM` (deterministic) and `FakeScorer` (threshold/aggregation/fail-closed logic without a session); integration tests use Qdrant `":memory:"`; expensive engines are session-scoped fixtures in `tests/fixtures/`.
 

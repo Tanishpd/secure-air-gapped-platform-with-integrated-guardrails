@@ -11,6 +11,34 @@ from pathlib import Path
 
 import pytest
 
+# Fixtures that construct a real provisioned artifact (an ORT session, the spaCy
+# pipeline, or a live Ollama). A test that (transitively) requests one cannot run
+# where ``models/`` is absent — e.g. CI. The hook below auto-applies the matching
+# marker from ``fixturenames`` so ``-m "not needs_models and not needs_ollama"``
+# (what ``make test-ci`` runs) self-updates as tests are added; no per-test
+# decorator to forget. The model fixtures also ``pytest.skip`` on a missing file,
+# which covers a plain ``make test`` run on an unprovisioned host.
+_MODEL_FIXTURES = frozenset(
+    {
+        "injection_scanner",
+        "bge_embedder",
+        "chunk_tokenizer",
+        "pii_guardrail",
+        "chat_engines",
+        "client",
+    }
+)
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Tag every test by the heaviest artifact it (transitively) needs."""
+    for item in items:
+        fixtures = set(getattr(item, "fixturenames", ()))
+        if fixtures & _MODEL_FIXTURES:
+            item.add_marker(pytest.mark.needs_models)
+        if "ollama_client" in fixtures:
+            item.add_marker(pytest.mark.needs_ollama)
+
 
 @pytest.fixture
 def clean_sagp_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
