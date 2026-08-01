@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from sagp.app.deps import Engines
-from sagp.app.routes import chat, health, ingest
+from sagp.app.routes import admin, chat, health, ingest
 from sagp.errors import PromptRejected, SagpError
 from sagp.utils.ids import new_incident_id
 from sagp.utils.timing import constant_time_floor
@@ -36,6 +36,7 @@ def create_app(engines: Engines) -> FastAPI:
     app.include_router(health.router)
     app.include_router(chat.router)
     app.include_router(ingest.router)
+    app.include_router(admin.router)
 
     @app.middleware("http")
     async def _stamp_start(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -45,10 +46,13 @@ def create_app(engines: Engines) -> FastAPI:
     @app.exception_handler(SagpError)
     def _handle_sagp_error(request: Request, exc: SagpError) -> JSONResponse:
         if isinstance(exc, PromptRejected):
-            # Uniform opaque body, padded to the fixed rejection deadline.
+            # Uniform opaque body, padded to the fixed rejection deadline. Reuse the
+            # incident_id the route already minted (so the 400, the audit record, and
+            # the quarantine file share one id); mint only if the route did not.
             t0 = getattr(request.state, "t0", time.monotonic())
             constant_time_floor(t0, engines.settings.rejection_deadline_ms)
-            body = {"error": {**_REJECTED_BODY["error"], "incident_id": new_incident_id()}}
+            incident_id = exc.incident_id or new_incident_id()
+            body = {"error": {**_REJECTED_BODY["error"], "incident_id": incident_id}}
             return JSONResponse(status_code=exc.status_code, content=body)
         # Non-detector errors (UNSUPPORTED, 401, 413, 429, 503): distinguishable, not padded.
         return JSONResponse(

@@ -125,9 +125,16 @@ def sample_pdfs(tmp_path_factory):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture(scope="module")
-def chat_engines(injection_scanner, pii_guardrail, bge_embedder, chunk_tokenizer, sample_pdfs):  # type: ignore[no-untyped-def]
-    """Full gateway engines: real guardrails, FakeLLM, :memory: store with the handbook."""
+def chat_engines(
+    injection_scanner, pii_guardrail, bge_embedder, chunk_tokenizer, sample_pdfs, tmp_path_factory
+):  # type: ignore[no-untyped-def]
+    """Full gateway engines: real guardrails, FakeLLM, :memory: store with the handbook.
+
+    Wired with a real (tmp) hash-chained audit sink + quarantine root so the M14
+    audit path is exercised by every request in the module.
+    """
     from sagp.app.deps import assemble_engines
+    from sagp.audit.sink import AuditSink
     from sagp.config import Settings
     from sagp.guardrails.policy import load_policy
     from sagp.llm.fake import FakeLLM
@@ -135,6 +142,8 @@ def chat_engines(injection_scanner, pii_guardrail, bge_embedder, chunk_tokenizer
     from sagp.rag.qdrant_store import QdrantStore
     from sagp.types import Principal
 
+    root = tmp_path_factory.mktemp("engines_root")
+    audit = AuditSink(root / "audit" / "audit.jsonl")
     store = QdrantStore.memory(embed_revision="test")
     ingest_pdf(
         sample_pdfs["handbook"],
@@ -158,6 +167,8 @@ def chat_engines(injection_scanner, pii_guardrail, bge_embedder, chunk_tokenizer
         settings=Settings(_env_file=None),  # type: ignore[call-arg]
         tokens=tokens,
         chunk_tokenizer=chunk_tokenizer,
+        audit=audit,
+        root=root,
     )
 
 
