@@ -88,6 +88,11 @@ Five caveats are load-bearing. A reader who stops at this README should still le
    target, an estimate or an unverified arithmetic derivation
    ([GUARDRAILS.md §10.2](docs/GUARDRAILS.md), [EVALUATION.md §1](docs/EVALUATION.md)).
 
+**Is it production-ready?** No — and [PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) is the honest
+go/no-go: what is green now, what gates remain, and which need a human, a credential, or hardware the repo
+cannot supply. `make production-preflight` runs the mechanical part and exits nonzero until every gate is
+closed — by design.
+
 ---
 
 ## Architecture at a glance
