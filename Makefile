@@ -17,7 +17,8 @@ PYTEST  := "$(VENV)/bin/pytest"
 .PHONY: help doctor venvs install install-provision lint format typecheck test clean \
         provision verify-manifest audit-verify eval samples \
         verify verify-online evidence proof smoke \
-        seal unseal serve airgap-status spike-docker seal-pf unseal-pf
+        seal unseal serve airgap-status spike-docker seal-pf unseal-pf \
+        ingest query up ollama-up ollama-down
 
 help:  ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -118,6 +119,23 @@ seal-pf:  ## OPTIONAL, sudo, HOST-WIDE: pf blocks all non-loopback egress (dry-r
 
 unseal-pf:  ## Reverse make seal-pf: restore /etc/pf.conf backup, flush the com.sagp anchor
 	bash scripts/unseal_pf.sh
+
+ingest:  ## Ingest a local PDF through the guardrails: make ingest FILE=… COLLECTION=…
+	$(PYTHON) scripts/ingest.py "$(FILE)" "$(COLLECTION)"
+
+query:  ## One guarded chat request: make query Q="…" [COLLECTION=…]
+	$(PYTHON) scripts/query.py "$(Q)" "$(COLLECTION)"
+
+up:  ## PROFILE=demo only: docker load (if saved) + compose up qdrant (loopback)
+	@[ -f models/docker/qdrant.tar ] && docker load -i models/docker/qdrant.tar || echo "up: no saved image at models/docker/qdrant.tar (pulled at provision); relying on local cache"
+	docker compose up -d qdrant
+
+ollama-up:  ## Install + load the ai.sagp.ollama launchd agent (loopback ollama serve)
+	bash scripts/ollama_up.sh
+
+ollama-down:  ## Unload the ai.sagp.ollama launchd agent
+	launchctl unload "$(HOME)/Library/LaunchAgents/ai.sagp.ollama.plist" 2>/dev/null || true
+	@echo "ollama-down: unloaded ai.sagp.ollama (if it was loaded)"
 
 clean:  ## Remove venvs and caches
 	rm -rf "$(VENV)" "$(VENV_PROVISION)" .pytest_cache .ruff_cache .mypy_cache

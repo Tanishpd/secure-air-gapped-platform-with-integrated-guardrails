@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ai.sagp.ollama — a launchd agent that runs `ollama serve` bound to loopback with
+  sagp's pinned Ollama env. Installed + loaded by `make ollama-up`; unloaded by
+  `make ollama-down`. This is one supervised way to run Ollama for the sealed box;
+  if you already run Ollama another way (Homebrew service, Ollama.app), you do NOT
+  need this. OLLAMA_HOST is 127.0.0.1 so the server never listens off-loopback.
+
+  Adjust <OLLAMA_BIN> and <REPO_ROOT> — make ollama-up substitutes them from the
+  live paths. Do not commit a version with your absolute paths baked in.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.sagp.ollama</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__OLLAMA_BIN__</string>
+    <string>serve</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OLLAMA_HOST</key>            <string>127.0.0.1:11434</string>
+    <key>OLLAMA_MODELS</key>          <string>__REPO_ROOT__/models/ollama</string>
+    <key>OLLAMA_NO_CLOUD</key>        <string>1</string>
+    <key>OLLAMA_ORIGINS</key>        <string>http://127.0.0.1</string>
+    <key>OLLAMA_MAX_LOADED_MODELS</key> <string>1</string>
+    <key>OLLAMA_NUM_PARALLEL</key>    <string>1</string>
+    <key>OLLAMA_KEEP_ALIVE</key>      <string>30m</string>
+    <key>OLLAMA_FLASH_ATTENTION</key> <string>1</string>
+    <key>OLLAMA_KV_CACHE_TYPE</key>   <string>q8_0</string>
+    <key>OLLAMA_CONTEXT_LENGTH</key>  <string>4096</string>
+  </dict>
+  <key>RunAtLoad</key>            <true/>
+  <key>KeepAlive</key>           <true/>
+  <key>ProcessType</key>         <string>Interactive</string>
+  <key>StandardOutPath</key>     <string>__REPO_ROOT__/models/ollama/serve.log</string>
+  <key>StandardErrorPath</key>   <string>__REPO_ROOT__/models/ollama/serve.log</string>
+</dict>
+</plist>

@@ -20,7 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from sagp.app.deps import Engines, get_engines, get_principal
 from sagp.audit.quarantine import quarantine_path
-from sagp.errors import AuthError
+from sagp.errors import AuthError, UnsupportedRequest
+from sagp.rag.vectorstore import is_quarantine_name, quarantine_name
 from sagp.types import Principal
 
 router = APIRouter()
@@ -64,4 +65,34 @@ def incident(
         "quarantined": raw_text is not None,
         "raw_text": raw_text,  # the offending prompt — pii:reveal only
         "audit_records": records,
+    }
+
+
+@router.get("/v1/admin/quarantine/{collection}")
+def quarantine_review(
+    collection: str,
+    request: Request,
+    limit: int = 100,
+    principal: Principal = Depends(get_principal),  # C0
+) -> dict[str, Any]:
+    """Review the chunks an ingest diverted to a collection's never-retrieved
+    ``<collection>__quarantine`` sibling (M12). Scope ``pii:reveal`` — the chunk
+    text is the raw offending document content, the same reason the sibling is
+    never a retrieval source. Pass the BASE collection name; the reserved sibling
+    is derived here (asking for a `__quarantine` name directly is rejected)."""
+    if not principal.has_scope("pii:reveal"):
+        raise AuthError("token lacks the pii:reveal scope")
+    if is_quarantine_name(collection):
+        raise UnsupportedRequest("pass the base collection name, not the __quarantine sibling")
+    engines = get_engines(request)
+    sibling = quarantine_name(collection)
+    chunks = engines.store.list_chunks(sibling, limit=limit)
+    return {
+        "collection": collection,
+        "quarantine_collection": sibling,
+        "count": len(chunks),
+        "chunks": [
+            {"doc_sha256": c.doc_sha256, "index": c.index, "page": c.page, "text": c.text}
+            for c in chunks
+        ],
     }

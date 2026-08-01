@@ -47,6 +47,43 @@ def test_incident_route_unknown_id_is_404(client) -> None:  # type: ignore[no-un
     assert r.status_code == 404
 
 
+def test_quarantine_review_lists_diverted_chunks(client) -> None:  # type: ignore[no-untyped-def]
+    # Ingest a doc with a visible injection payload, then review its quarantine sibling.
+    ing = client.post(
+        "/v1/ingest",
+        json={"path": "samples/poisoned_visible.pdf", "collection": "pvq"},
+        headers=CHAT,  # tok-chat has the ingest scope
+    )
+    assert ing.status_code == 200 and ing.json()["chunks_quarantined"] >= 1
+    r = client.get("/v1/admin/quarantine/pvq", headers=REVEAL)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["quarantine_collection"] == "pvq__quarantine"
+    assert body["count"] >= 1
+    assert any("SYSTEM OVERRIDE" in c["text"] for c in body["chunks"])
+
+
+def test_quarantine_review_requires_pii_reveal(client) -> None:  # type: ignore[no-untyped-def]
+    r = client.get("/v1/admin/quarantine/handbook", headers=CHAT)  # no pii:reveal
+    assert r.status_code == 401
+
+
+def test_quarantine_review_rejects_sibling_name(client) -> None:  # type: ignore[no-untyped-def]
+    r = client.get("/v1/admin/quarantine/handbook__quarantine", headers=REVEAL)
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "UNSUPPORTED"
+
+
+def test_readyz_reports_measured_rss(client) -> None:  # type: ignore[no-untyped-def]
+    r = client.get("/readyz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ready"
+    assert "process_rss_mb" in body  # measured whole-process RSS (or null if psutil unavailable)
+    if body["process_rss_mb"] is not None:
+        assert body["process_rss_mb"] > 0
+
+
 def test_rate_limit_returns_429(client, chat_engines) -> None:  # type: ignore[no-untyped-def]
     original = chat_engines.rate_limiter
     chat_engines.rate_limiter = RateLimiter(0)  # every request is over the (zero) limit
