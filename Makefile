@@ -15,7 +15,7 @@ MYPY    := "$(VENV)/bin/mypy"
 PYTEST  := "$(VENV)/bin/pytest"
 
 .PHONY: help doctor venvs install install-provision lint format typecheck test test-ci clean \
-        provision verify-manifest audit-verify eval eval-candidate samples \
+        provision verify-manifest audit-verify eval eval-candidate production-preflight samples \
         verify verify-online evidence proof smoke \
         seal unseal serve airgap-status spike-docker seal-pf unseal-pf \
         ingest query up ollama-up ollama-down
@@ -78,6 +78,9 @@ eval-candidate:  ## Injection-classifier bake-off (online, provision venv): CAND
 	@test -n "$(CANDIDATE)" || { echo "usage: make eval-candidate CANDIDATE=<hf-repo-or-dir> NAME=<slug>"; exit 2; }
 	@test -n "$(NAME)" || { echo "usage: make eval-candidate CANDIDATE=<hf-repo-or-dir> NAME=<slug>"; exit 2; }
 	PYTHONPATH="$(PWD)/src" $(PROV_PY) scripts/eval_classifier_candidate.py --candidate "$(CANDIDATE)" --name "$(NAME)"
+
+production-preflight:  ## Honest production go/no-go: automated gates + human checklist (exits nonzero until ready — by design)
+	PYTHONPATH="$(PWD)/src" $(PYTHON) scripts/production_preflight.py
 
 verify-manifest:  ## Full manifest verification (recompute every hash + signature)
 	$(PYTHON) -m sagp.netguard.manifest
