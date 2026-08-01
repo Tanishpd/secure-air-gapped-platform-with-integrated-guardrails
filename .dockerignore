@@ -1,0 +1,26 @@
+# Keep the build context small and free of weights/secrets/PII. The Dockerfile
+# COPYs only src/config/bin/pyproject/airgap_guard_boot.py; everything else is noise
+# or must never enter an image (invariant 4).
+.git
+.github
+.venv
+.venv-provision
+.sbom-venv
+**/__pycache__
+**/*.pyc
+models
+data
+audit
+evidence
+.airgap
+vendor
+tests
+docs
+deploy
+scripts
+*.onnx
+*.safetensors
+*.gguf
+.env
+.env.*
+sbom.cdx.json

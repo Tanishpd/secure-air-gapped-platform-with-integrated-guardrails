@@ -50,6 +50,9 @@ dev = [
   "ruff==0.15.3",
   "mypy==1.19.1",
   "types-PyYAML==6.0.12.20260724",
+  # Supply-chain: CVE gate (`make audit-deps`) + SBOM generation (`make sbom`).
+  "pip-audit==2.10.1",
+  "cyclonedx-bom==7.3.1",
 ]
 # thinc-apple-ops (Accelerate BLAS for spaCy) is an opt-in perf extra; kept out of
 # the default closure so M0 installs from wheels without a source build.

@@ -100,6 +100,8 @@ evidence/
 # Both are rebuilt from vendor/ + the lockfiles; neither is source.
 .venv
 .venv-provision
+# Throwaway runtime venv built by `make sbom`; the SBOM output (sbom.cdx.json) IS committed.
+.sbom-venv
 __pycache__/
 *.pyc
 .pytest_cache/

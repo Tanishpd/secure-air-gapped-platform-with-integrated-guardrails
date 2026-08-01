@@ -40,7 +40,10 @@ the physical seal + disconnect.
 | Signed manifest present | GREEN | `models/MANIFEST.json` (full recompute is R‑manifest) |
 | Guardrail config valid | GREEN | `guardrails.yaml` + `entities.yaml` parse & validate (invariant 12) |
 | Egress guard importable | GREEN | `sagp.netguard.egress` |
-| CI configured | GREEN | `.github/workflows/ci.yml` |
+| CI configured | GREEN | `.github/workflows/ci.yml` (Actions SHA-pinned, node24) |
+| Dependency CVE scan | GREEN | `make audit-deps` (`pip-audit`) — no known vulnerabilities; CI gate |
+| SBOM | GREEN | `make sbom` → `sbom.cdx.json` (CycloneDX 1.6, 84 runtime components) |
+| App image builds | GREEN | `docker build` → 639 MB, `import sagp` OK (Linux shape; caveats in `Dockerfile`) |
 | Online negative control | GREEN | `verify-online-<gen>.json` blocked every probe |
 
 The FPR gap is the one measured miss. It is **not** a hard-gate failure (recall and PII

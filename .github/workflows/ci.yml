@@ -23,9 +23,11 @@ jobs:
   lint-type-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Actions are pinned to a commit SHA (supply-chain hardening) with the human
+      # tag in a comment; all three run on node24 (no Node-20 deprecation).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           # requires-python is >=3.11,<3.12; pin the minor, take the latest patch.
           python-version: '3.11'
@@ -33,10 +35,12 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install (editable + dev tools)
-        # NOT the hash-pinned runtime lock: that pins macOS/arm wheels whose hashes
-        # would not match the Linux wheels resolved here. CI resolves fresh.
+        # Runtime deps are pinned in pyproject ([project].dependencies, all ==); the
+        # macOS/arm wheels differ from the Linux wheels resolved here, so CI resolves
+        # fresh rather than using a platform-specific lock. setuptools>=83 closes
+        # PYSEC-2026-3447 before the dependency audit runs.
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip "setuptools>=83.0.0"
           python -m pip install -e '.[dev]'
 
       # One source of truth: the same Makefile targets developers run, with the
@@ -49,3 +53,16 @@ jobs:
 
       - name: Test (model-free subset)
         run: make test-ci PYTEST=pytest
+
+      - name: Dependency audit (pip-audit — fails on a known CVE)
+        run: make audit-deps PIP_AUDIT=pip-audit
+
+      - name: SBOM (CycloneDX, runtime-only)
+        run: make sbom CYCLONEDX=cyclonedx-py PY311=python PYTHON=python
+
+      - name: Publish SBOM artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: error
