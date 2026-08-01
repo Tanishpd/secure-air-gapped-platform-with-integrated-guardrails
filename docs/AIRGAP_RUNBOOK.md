@@ -78,8 +78,8 @@ which one it tripped on. Do not start Phase A with an unchecked box.
       against an 8 GB ceiling — both projections, neither measured), and it needs no Docker.
       `PROFILE=demo` (Docker, `qdrant/qdrant:v1.18.3-unprivileged`) is the **demonstration and proof
       path** — the network-isolation boundary this project exists to show, and the path the proof harness
-      targets. Its isolation properties are **untested** — write "untested", never "isolated" — until the
-      Phase-0 spike below resolves OQ-4 and OQ-5. ADR-0002 is **Proposed — blocked on that spike**.
+      targets. It is **NOT network-isolated by compose options** — never write "isolated" — as the Phase-0
+      spike below (run 2026-08-01) established when it resolved OQ-4 and OQ-5. ADR-0002 is **Accepted**.
 - [ ] **Host is online** — `curl -sS --max-time 5 -o /dev/null -w '%{http_code}\n' https://huggingface.co`
       → `200`, and `ping -c1 1.1.1.1` → 0% loss. Provisioning downloads ~8.2 GB (ESTIMATE) plus the
       4.7 GB `llama3:8b` tag pulled at A4 (it **is** pulled — included in BLUEPRINT §8's totals, per
@@ -93,16 +93,18 @@ which one it tripped on. Do not start Phase A with an unchecked box.
       memory-resident and unscrubbed.
 - [ ] **Bootstrap done** — `make venvs lock install`; confirm `.venv`, `.venv-provision`, and that both
       lockfiles are hash-pinned.
-- [ ] **Phase 0 — the Docker spike, `make spike-docker`** (`PROFILE=demo`/`proof` only; run it online, in
-      `BOOTSTRAP`, before Phase A). It exists to resolve two questions empirically, and nothing else
-      resolves them:
-      **OQ-4** — can `internal: true` coexist with a published `127.0.0.1:6333` port on Docker Desktop, or
-      does publishing the port silently defeat the internal network?
-      **OQ-5** — does `enable_ip_masquerade: "false"` actually block egress on Docker Desktop, where
-      containers egress through a userland VM proxy rather than a host MASQUERADE rule?
-      The spike writes its result into ADR-0002, which stays **Proposed** until then. **It has not been
-      run.** Until it has, no document may call the Docker path "isolated" — the word is "untested" — and
-      a `PROFILE=proof` verdict about container egress cannot be published.
+- [x] **Phase 0 — the Docker spike, `make spike-docker`** (`PROFILE=demo`/`proof` only; run online, in
+      `BOOTSTRAP`, before Phase A). **RUN 2026-08-01** on Docker Desktop 29.5.3; it resolved two questions
+      empirically, both **negatively** (evidence: `evidence/spike-docker.json`, gitignored):
+      **OQ-4** — `internal: true` and an app-reachable Qdrant are **mutually exclusive**: with `internal: true`
+      a published `127.0.0.1:6333` port is accepted but the host cannot reach it (http_code 000), so the
+      compose file uses a **non-internal** bridge.
+      **OQ-5** — `enable_ip_masquerade: "false"` does **not** block egress on Docker Desktop; on a reachable
+      network TCP and DNS both reach out via the userland VM proxy, and DNS always resolves via the embedded
+      resolver even on an internal network.
+      **Conclusion:** the Docker path is **NOT isolated by compose options** — its egress control comes from
+      the `pf` anchor (`make seal-pf`) + loopback binding, not Docker networking. ADR-0002 is now **Accepted**.
+      No document may call the Docker path "isolated"; the accurate phrase is "not isolated by compose options".
 
 ---
 
@@ -410,10 +412,12 @@ M13: every assertion **passed** and every paired control behaved as expected —
 
 `PROFILE=proof` adds Docker-network assertions, including a second prober on `sagp_vec_noegress` — the
 network Qdrant actually runs on. **Only that second prober's result may be cited for the production path.**
-Whether `enable_ip_masquerade: "false"` blocks egress on Docker Desktop is **untested** (OQ-5), and whether
-`internal: true` can coexist with a published loopback port is likewise **untested** (OQ-4); both are what
-`make spike-docker` (§1) exists to settle. `docker exec` probes measure Docker's Linux VM, not macOS. Until
-the spike runs, the Docker path's isolation is **untested**, never "isolated".
+The Phase-0 spike (`make spike-docker`, §1) settled both questions on 2026-08-01, **negatively**:
+`enable_ip_masquerade: "false"` does **not** block egress on Docker Desktop (OQ-5 — containers egress via a
+userland VM proxy, and DNS always resolves via the embedded resolver), and `internal: true` cannot coexist
+with an app-reachable published loopback port (OQ-4 — the host cannot reach it, so a non-internal bridge is
+used). `docker exec` probes measure Docker's Linux VM, not macOS. The Docker path is therefore **NOT isolated
+by compose options** — its egress control comes from the `pf` anchor + loopback binding, never `internal:`.
 
 ### Annotated PASS output
 
@@ -737,7 +741,7 @@ this host.
 | `make venvs` | BOOTSTRAP | Creates `.venv` + `.venv-provision` from `~/.local/bin/python3.11` | — | 30–60 s |
 | `make lock` | BOOTSTRAP | Resolves both closures once; emits `requirements.*.lock` with `--generate-hashes` | metadata | 2–5 min |
 | `make install` | BOOTSTRAP | `pip install --require-hashes -r requirements.runtime.lock -e .` | ~0.45 GB installed | 2–4 min |
-| `make spike-docker` | BOOTSTRAP (Phase 0) | Must resolve OQ-4 (`internal: true` alongside a published `127.0.0.1:6333`) and OQ-5 (does `enable_ip_masquerade: "false"` block egress on Docker Desktop?) empirically → ADR-0002, which stays **Proposed** until it runs. **Not yet run** (§1) | ~10 MB | ~10 min |
+| `make spike-docker` | BOOTSTRAP (Phase 0) | Resolved OQ-4 (`internal: true` breaks host reachability → non-internal bridge) and OQ-5 (`enable_ip_masquerade: "false"` does **not** block egress on Docker Desktop; DNS leaks via the embedded resolver) empirically → ADR-0002 **Accepted**. **RUN 2026-08-01** (§1); Docker path NOT isolated by compose options | ~10 MB | ~10 min |
 | `make provision` | PROVISION | Steps 01–10; resumable; idempotent; **non-zero exit on any gate failure** | **~8.2 GB**, plus the 4.7 GB `llama3:8b` tag pulled at A4 — included in BLUEPRINT §8's totals | 25–55 min |
 | `make verify-online` | PROVISION | Negative control: probes succeed in `audit` mode, raise `EgressViolation` in `enforce` | — | < 30 s |
 | `make eval` | PROVISION | Corpus run → `docs/metrics/latest.json` (**created at M6; the file now exists and is committed**); >2pp regression fails the build | — | 3–10 min |

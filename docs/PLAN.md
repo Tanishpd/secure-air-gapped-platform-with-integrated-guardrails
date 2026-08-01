@@ -119,19 +119,22 @@ have **different jobs**:
   path** — the network-isolation boundary this project exists to show, the path you asked for, and
   the one the proof harness targets. It is opt-in, not the default.
 
-**One unknown, in two parts.** Whether `internal: true` can coexist with a published `127.0.0.1:6333`
-port on Docker Desktop is **untested** (OQ-4) — `make spike-docker` has not been run and ADR-0002
-remains Proposed. If it cannot, isolation
-would come from `com.docker.network.bridge.enable_ip_masquerade: "false"` instead, which is itself
-unverified on Docker Desktop (OQ-5), since containers there egress via a userland VM proxy rather
-than a host MASQUERADE rule.
+**One unknown, in two parts — now RESOLVED.** The Phase-0 spike (`make spike-docker`) was run
+2026-08-01 on Docker Desktop 29.5.3 and settled OQ-4/OQ-5 **negatively**. OQ-4: `internal: true` and an
+app-reachable Qdrant are **mutually exclusive** — with `internal: true` a published `127.0.0.1:6333` port
+is accepted but the macOS host cannot reach it (http_code 000), and the sagp app runs on the host, so the
+compose file uses a **non-internal** bridge. OQ-5: `com.docker.network.bridge.enable_ip_masquerade: "false"`
+does **not** block egress on Docker Desktop — on a reachable network egress is fully open (TCP and DNS both
+reach out) because containers egress via a userland VM proxy rather than a host MASQUERADE rule; even on an
+internal network DNS still resolves via the embedded resolver.
 
-**Plan:** a **Phase-0 spike (`make spike-docker`) resolves OQ-4/OQ-5 empirically in ~10 minutes**,
-and the answer is recorded in ADR-0002 — whose status is **Proposed, blocked on that spike**, not
-Accepted. Until the spike runs, the Docker path's isolation properties are **untested**, and the
-runbook and every other document must say "untested", never "isolated". Whatever the spike finds gets
-*reported*, not assumed — a compose file that publishes a port on an internal network while the docs
-claim isolation would be the exact kind of overclaim this project is supposed to avoid.
+**Conclusion:** on Docker Desktop you cannot get both an app-reachable Qdrant and an egress-blocked
+container from compose network options alone. The Docker path is **NOT network-isolated by compose
+options**; its egress control comes from the host `pf` anchor (`make seal-pf`) plus loopback binding, and
+DNS resolution always leaks via the embedded resolver. ADR-0002 is now **Accepted** (was Proposed).
+Evidence: `evidence/spike-docker.json` (gitignored). No document may call the Docker path "isolated" — the
+honest word is "not isolated by compose options", which is a stronger, evidence-based statement than the
+old "untested".
 
 **Any RAM number in this document names the profile it assumes:** 6.75 GB = embedded, 7.60 GB =
 demo/Docker. See §6.
@@ -247,7 +250,7 @@ the PDF loader — sub-1.0pt fonts, off-mediabox text, `/RenderMode 3` invisible
 # Phase 0 — BOOTSTRAP (online)
 make doctor        # hard-fails under 25 GB free
 make venvs lock install
-make spike-docker  # resolves OQ-4/OQ-5 → ADR-0002
+make spike-docker  # RUN 2026-08-01: resolved OQ-4/OQ-5 → ADR-0002 (Accepted)
 
 # Phase 1 — PROVISION (online, one-way door)
 make provision     # 01 wheelhouse · 02 hf_models · 03 spacy · 04 ollama · 05 docker
@@ -435,7 +438,7 @@ def test_final_bytes_were_scanned(spy_scanner, spy_ollama, client):
 |---|---|---|
 | OQ-1 | Injection classifier RSS — **RESOLVED at M1**: measured **0.30 GB** for the **FP32** ONNX session (INT8 rejected — OQ-2); ORT mmaps the weights, so RSS ≪ file size and the RAM budget is unchanged | `07_gates.py` measured it; the gate fails provisioning above 0.35 GB (FP32 passed at 0.30) |
 | OQ-2 | INT8 parity on DeBERTa-v3's disentangled attention — **RESOLVED at M1: it FAILS** (INT8 dynamic quant *inverts* the classifier — `max \|ΔP\| ≈ 0.98`, label flips) | Hard parity gate correctly refused INT8; the fallback ladder selected **FP32 ONNX**, which is the runtime model |
-| OQ-4/5 | Docker `internal: true` + published port; does `enable_ip_masquerade:false` block egress on Docker Desktop? | Phase-0 spike → ADR-0002 (§3) |
+| OQ-4/5 | Docker `internal: true` + published port; does `enable_ip_masquerade:false` block egress on Docker Desktop? — **RESOLVED at spike (2026-08-01), both NEGATIVE**: `internal:true` blocks host reachability (→ non-internal bridge); `enable_ip_masquerade:false` does not stop egress (userland VM proxy), DNS leaks via the embedded resolver | Phase-0 spike RAN → ADR-0002 **Accepted** (§3); Docker path NOT isolated by compose options, egress relies on `pf` + loopback |
 | OQ-6 | Does Presidio's regex timeout propagate out of `analyze()` or get swallowed into a **partial result set**? | Read `PatternRecognizer.__analyze_patterns` before M4 — if swallowed, that is a silent fail-open in the masking layer |
 | OQ-8 | Ollama compute-graph overhead (0.35 GB estimated) | `ollama ps` — a 10-minute measurement that validates the whole RAM table |
 | OQ-9 | `en_core_web_md` PERSON recall on **Indian names** — spaCy publishes only aggregate `ENTS_F`, and OntoNotes is Western-news weighted | Build a 100–200 example labelled eval set before locking the model |

@@ -116,12 +116,17 @@ flowchart TB
    it is the network-isolation boundary this project exists to show, and it is what the proof harness
    targets. The §9 RAM table below is the embedded profile; every RAM number in this document names the
    profile it assumes.
-   **The Docker path's isolation properties are UNTESTED, not isolated.**
-   **OPEN QUESTION (OQ-4/OQ-5):** whether `internal: true` can coexist with a published loopback port on
-   Docker Desktop 29.5.3, and whether `enable_ip_masquerade: "false"` actually blocks container egress
-   there — where containers egress via a userland VM proxy rather than a host MASQUERADE rule — are both
-   **untested**; the daemon is not running. `make spike-docker` (Phase 0) is specified to resolve them
-   into ADR-0002, which stays **Proposed** until it does.
+   **The Docker path is NOT network-isolated by compose network options.**
+   **RESOLVED (OQ-4/OQ-5, `make spike-docker` run 2026-08-01 on Docker Desktop 29.5.3):** `internal: true`
+   and an app-reachable Qdrant are **mutually exclusive** — with `internal: true` a published `127.0.0.1`
+   port is accepted but the macOS host cannot reach the container (http_code 000), and the sagp app runs on
+   the host (OQ-4 → PUBLISH-NO-ROUTE), so the compose file uses a **non-internal** bridge. And
+   `enable_ip_masquerade: "false"` does **not** block egress on Docker Desktop: on a reachable network egress
+   is fully open (TCP and DNS both reach out) because containers egress via a userland VM proxy rather than a
+   host MASQUERADE rule; even on an internal network DNS still resolves via the embedded resolver (OQ-5).
+   The Docker path's egress control therefore comes from the host `pf` anchor (`make seal-pf`) plus loopback
+   binding, **not** from `internal:`/`masquerade`; DNS resolution always leaks via the embedded resolver.
+   ADR-0002 is now **Accepted**. See [LIMITATIONS.md](LIMITATIONS.md) item 19.
 5. **Ollama is a separate Go process outside both guard layers.** It is covered only by the optional pf
    anchor (`make seal-pf`). Its binary `sha256` is in `MANIFEST.json` and `ollama --version` is asserted
    at startup. See [THREAT_MODEL.md](THREAT_MODEL.md).
@@ -683,7 +688,7 @@ been measured on this M2.
 | Variant | Total (projected) | Projected verdict (unmeasured) |
 |---|---|---|
 | Embedded profile (the table above) — the default runtime backend | **6.75** | fits with 1.25 GB projected headroom; the profile to ship |
-| `PROFILE=demo` — Docker Qdrant, `mem_limit 512m`, Docker Desktop VM capped at 2 GB. The demonstration and proof path; its isolation is **untested** (OQ-4/OQ-5) | ~7.60 | projected to fit with no margin; close other apps |
+| `PROFILE=demo` — Docker Qdrant, `mem_limit 512m`, Docker Desktop VM capped at 2 GB. The demonstration and proof path; it is **NOT isolated by compose network options** (OQ-4/OQ-5 resolved 2026-08-01), egress relies on `pf` + loopback | ~7.60 | projected to fit with no margin; close other apps |
 | Classifier session RSS regresses above 0.30 GB (why the gate is 0.35, not 0.30) | ≤ 7.05 | did not happen — the FP32 session **measured 0.30 GB** (OQ-1); the 0.35 gate remains as headroom |
 | FP32 ONNX classifier — **now the shipped runtime**, not a fallback (INT8 rejected, OQ-2) | 6.75 | ORT mmaps the weights, so FP32 **measured 0.30 GB** (not the once-feared 0.80) and does **not** force `llama3.2:1b`; no LLM downgrade needed |
 | `en_core_web_lg` instead of `md` (embedded) | 7.35 | discouraged; +0.60 GB for +0.81 aggregate `ENTS_F` |
@@ -868,7 +873,7 @@ index rather than a duplicated one.
 | ADR | Title | One line |
 |---|---|---|
 | [0001](adr/0001-ollama-over-vllm.md) | Ollama over vLLM | No 4-bit on vLLM CPU, a Python 3.12 collision, and a preallocating KV pool that does not fit in 8 GB. |
-| [0002](adr/0002-qdrant-deployment-mode.md) | Qdrant deployment mode — **Proposed, blocked on the Phase-0 spike** | Qdrant is the only store; `SAGP_QDRANT_MODE=embedded` is the default runtime backend on RAM grounds (6.75 GB embedded vs 7.60 GB demo/Docker, both projected) and `PROFILE=demo` (Docker) is the demonstration and proof path. This ADR **will record** the Phase-0 spike that must resolve OQ-4/OQ-5; the spike has not been run, so the Docker path's isolation is **untested**. |
+| [0002](adr/0002-qdrant-deployment-mode.md) | Qdrant deployment mode — **Accepted** | Qdrant is the only store; `SAGP_QDRANT_MODE=embedded` is the default runtime backend on RAM grounds (6.75 GB embedded vs 7.60 GB demo/Docker, both projected) and `PROFILE=demo` (Docker) is the demonstration and proof path. The Phase-0 spike (`make spike-docker`, run 2026-08-01) resolved OQ-4/OQ-5: the Docker path is **NOT isolated by compose network options** — egress control comes from the `pf` anchor + loopback, not `internal:`/`masquerade`. |
 | [0003](adr/0003-two-virtualenvs.md) | Two virtualenvs | `.venv` sealed vs `.venv-provision` online dissolves the `transformers`/`huggingface-hub` resolution deadlock and removes ~0.45 GB of torch RSS. |
 | [0004](adr/0004-onnx-int8-no-torch.md) | ONNX (no torch at runtime) | The INT8 parity gate **failed** (OQ-2 — `quantize_dynamic` inverts this DeBERTa-v3), so **FP32 ONNX ships**; the tokenizer and embedding parity gates (embedding parity **1.6e-07**) still make dropping `transformers` safe. |
 | [0005](adr/0005-vault-request-scoped.md) | The vault is request-scoped | Never persisted, cleared in a `finally`, and the reason the endpoint is single-turn. |

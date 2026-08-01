@@ -1,15 +1,20 @@
-# PROFILE=demo / proof — the Qdrant container that is the demonstration and proof
-# path (the network-isolation boundary this project exists to show). The default
-# runtime backend is EMBEDDED Qdrant (no Docker); this file is only for the demo.
+# PROFILE=demo / proof — the Qdrant container that is the demonstration path. The
+# default runtime backend is EMBEDDED Qdrant (no Docker); this file is only for
+# the demo.
 #
-# ISOLATION IS UNTESTED. ADR-0002 is "Proposed — blocked on make spike-docker".
-# Two open questions this compose file cannot answer on its own (OQ-4/OQ-5):
-#   - can `internal: true` coexist with a published 127.0.0.1:6333 port on Docker
-#     Desktop, or does publishing the port silently defeat the internal network?
-#   - does `enable_ip_masquerade: "false"` actually block egress on Docker Desktop,
-#     where containers egress via a userland VM proxy rather than a host MASQUERADE?
-# Until the spike resolves them, the word for this path is "untested", never
-# "isolated", and no PROFILE=proof verdict about container egress may be published.
+# NETWORK ISOLATION IS NOT PROVIDED BY DOCKER OPTIONS (ADR-0002; `make spike-docker`
+# run 2026-08-01, evidence/spike-docker.json). The spike resolved OQ-4/OQ-5 on
+# Docker Desktop 29.5.3, negatively:
+#   OQ-4: with `internal: true`, a published 127.0.0.1 port is accepted and the
+#         container runs, but the HOST cannot reach it (http_code=000). The sagp
+#         app runs on the host, so `internal: true` would make Qdrant unreachable.
+#         => this file uses a NON-internal bridge so the app can reach Qdrant.
+#   OQ-5: `enable_ip_masquerade=false` does NOT block egress on a reachable
+#         network (Docker Desktop egresses via a userland VM proxy — TCP reached,
+#         DNS resolved in the spike). DNS also resolves even on an internal net.
+# CONCLUSION: egress control for this container must come from the host pf anchor
+# (`make seal-pf`, deferred) + loopback binding, NOT from Docker networking. Do
+# not call this path "isolated" on the strength of the options below.
 
 services:
   qdrant:
@@ -21,20 +26,23 @@ services:
     cap_drop:
       - ALL
     ports:
-      # Loopback ONLY — never 0.0.0.0. If publishing the port defeats `internal`
-      # (OQ-4), isolation must come from the network options below instead.
+      # Loopback ONLY — never 0.0.0.0. This is the host↔Qdrant path the app needs;
+      # OQ-4 showed it only routes on a NON-internal network.
       - "127.0.0.1:6333:6333"
     volumes:
       - ./data/qdrant:/qdrant/storage
     tmpfs:
       - /tmp
     networks:
-      - sagp_vec_noegress
+      - sagp_vec
     restart: "no"
 
 networks:
-  sagp_vec_noegress:
+  sagp_vec:
+    # NOT `internal: true` — OQ-4: an internal network makes the published port
+    # unreachable from the host. `enable_ip_masquerade=false` is kept as a
+    # belt-and-suspenders marker, but OQ-5 showed it does NOT actually block egress
+    # on Docker Desktop; the pf anchor is what controls this container's egress.
     driver: bridge
-    internal: true # no route to the outside world (UNTESTED alongside a published port)
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
