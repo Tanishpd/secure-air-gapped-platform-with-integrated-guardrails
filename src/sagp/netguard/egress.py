@@ -79,6 +79,11 @@ def violations() -> list[str]:
     return list(_violations)
 
 
+def is_installed() -> bool:
+    """True once ``install_egress_guard`` has armed both layers in this process."""
+    return _installed
+
+
 def _record(msg: str) -> EgressViolation:
     _violations.append(msg)
     return EgressViolation(msg)
