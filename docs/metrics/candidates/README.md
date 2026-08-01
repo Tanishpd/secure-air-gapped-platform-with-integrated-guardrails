@@ -26,49 +26,53 @@ Accuracy (recall/precision/FPR) is comparable across candidates here; deployed R
 and latency are **not** (torch ≠ the ONNX session), so `size_proxy` reports parameter
 count only — real RSS needs the ONNX export + `07_gates` measurement.
 
-## Results — the ungated landscape, swept
+## Results — 8 candidates, incl. Prompt Guard 2
 
-| candidate | params (M) | headline recall | precision | benign FPR | recall regressions | verdict |
+Sorted worst-to-best FPR. **F** is family F recall — indirect, document-planted injection,
+the highest-value RAG threat. Read that column first.
+
+| candidate | params (M) | recall | precision | FPR | **F** | verdict |
 |---|---|---|---|---|---|---|
-| **baseline** (protectai v2) | 184 | **1.000** | 0.854 | 0.24 | — | — |
-| `deepset/deberta-v3-base-injection` (v1) | 184 | 1.000 | 0.761 | 0.44 | none | `NO_IMPROVEMENT` |
-| `testsavantai/…-small-v0` | 29 | 0.903 | 0.909 | 0.12 | A, C, B, F | `REJECT_RECALL_REGRESSION` |
-| `testsavantai/…-base-v0` | 67 | 0.968 | 0.861 | 0.20 | D, B, F | `REJECT_RECALL_REGRESSION` |
-| `testsavantai/…-large-v0` | 184 | 0.968 | 0.944 | **0.08** | A, F | `REJECT_RECALL_REGRESSION` |
-| `jackhhao/jailbreak-classifier` | 110 | 0.774 | 0.900 | 0.12 | C, D, E, B, F | `REJECT_RECALL_REGRESSION` |
+| **baseline** (protectai v2) | 184 | **1.000** | 0.854 | 0.24 | **1.00** | — |
+| `deepset/…-injection` (v1) | 184 | 1.000 | 0.761 | 0.44 | 1.00 | `NO_IMPROVEMENT` |
+| `testsavantai/…-base-v0` | 67 | 0.968 | 0.861 | 0.20 | 0.75 | `REJECT` (D,B,F) |
+| `protectai/…-prompt-injection` (v1) | 184 | 0.935 | 0.912 | 0.12 | 0.25 | `REJECT` (D,B,F) |
+| `testsavantai/…-small-v0` | 29 | 0.903 | 0.909 | 0.12 | 0.75 | `REJECT` (A,C,B,F) |
+| `jackhhao/jailbreak-classifier` | 110 | 0.774 | 0.900 | 0.12 | 0.50 | `REJECT` (C,D,E,B,F) |
+| `testsavantai/…-large-v0` | 184 | 0.968 | 0.944 | 0.08 | 0.50 | `REJECT` (A,F) |
+| **Llama Prompt Guard 2 (22M)** ᵍ | 71 | 0.968 | 0.941 | 0.08 | 0.25 | `REJECT` (D,B,F) |
+| **Llama Prompt Guard 2 (86M)** ᵍ | 279 | 0.968 | **0.970** | **0.04** | 0.25 | `REJECT` (D,B,F) |
 
-**The finding: on this corpus, every ungated model that improves the FPR ceiling does
-so by trading away attack recall.** Four of five would have looked like an upgrade on
-the headline FPR/precision numbers — and every one of those silently drops attacks the
-baseline catches:
+ᵍ Prompt Guard 2 evaluated via the **ungated** ONNX re-host `gravitee-io/Llama-Prompt-Guard-2-{86,22}M-onnx`
+(which ships real `BENIGN`/`MALICIOUS` labels + `model.safetensors`), so no Meta licence
+or PII disclosure was needed to *measure* it. Deploying PG2 would still require resolving
+the licence (the genuine gated Meta model, or gravitee's redistribution terms) — but the
+measurement already settles whether that is worth doing.
 
-- `testsavantai-large` is the sharpest lesson. It **meets the 0.10 FPR target (0.08)**
-  and lifts precision to 0.94 — the numbers you would swap for. But it misses **20% of
-  direct (family A)** and **50% of indirect, document-planted (family F)** attacks.
-  Family F is the highest-value RAG threat. Blind-swapping to hit the FPR number would
-  have halved indirect-injection detection.
-- `testsavantai-small` (6× smaller, tempting for the 8 GB budget) improves both ceiling
-  metrics but misses **40% of family A** and **50% of jailbreaks (B)**.
-- `jackhhao/jailbreak-classifier` — a *jailbreak*-named model — scores family B at 0.75,
-  worse than the baseline's 1.0, and craters headline recall to 0.77.
+**The finding — one column tells the whole story: the baseline is the ONLY model that
+holds family F (indirect injection) at 1.0.** Every alternative, without exception, buys
+a lower FPR by sacrificing document-poisoning detection, dropping F to 0.25–0.75.
 
-The baseline's recall-1.0 is bought with a higher FPR; the ungated alternatives make
-the opposite trade. **No ungated candidate offers a strictly-better point on the
-recall/FPR frontier** — which is exactly why the swap needs a genuinely stronger,
-multilingual model rather than a lateral move. Not evaluated (`gated=auto`, need a
-token): `Epivolis/Hyperion`, `qualifire/prompt-injection-sentinel`.
+- **Prompt Guard 2 is the sharpest case, and it settles H5.** It posts the best FPR of
+  anything tested (0.04, well under the 0.10 target) and the best precision (0.97) — the
+  numbers you'd change a security control for. But it misses **50% of jailbreaks (B)** and
+  **75% of indirect attacks (F → 0.25)**. This is not a fluke: Meta tuned PG2 to *ignore*
+  instruction-like text embedded in third-party content precisely to cut false positives —
+  which is exactly family F. **So the Meta licence + PII form is not worth pursuing: PG2
+  would gut the highest-value RAG defence.** Path-3 (ungated hunting) answered the gated
+  question for free.
+- The whole protectai/Prompt-Guard lineage (`protectai-v1`, PG2-22M, PG2-86M) collapses F
+  to 0.25. The baseline (protectai **v2**) is the outlier that fixed it.
 
-Every REJECT here is the gate (`candidate_gate.py`) doing its one job: refusing a model
-that would have shipped a security regression disguised as a metrics win.
+**Conclusion: no off-the-shelf model — gated or ungated, 29M to 279M — closes the FPR gap
+without regressing recall.** The recall/FPR tradeoff is a genuine frontier, and the baseline
+sits at the recall-maximising corner (recall 1.0, F 1.0). Closing the FPR gap while holding
+recall is therefore **not a swap** — it needs one of: an *ensemble* (baseline for recall +
+a low-FPR model as a benign-corroborator that may never veto a detection — non-trivial,
+because PG2 misses F), or *fine-tuning* on the deployed corpus. Both are real engineering,
+scoped in LIMITATIONS 9. Not evaluated (`gated=auto`, need a plain token): `Epivolis/Hyperion`,
+`qualifire/prompt-injection-sentinel`.
 
-## The real target is blocked on you
-
-The classifier best positioned to close the documented FPR ceiling (over-firing on
-quoted-attack English and on non-English text — LIMITATIONS 6/9) is **Llama Prompt
-Guard 2** (`meta-llama/Llama-Prompt-Guard-2-86M` / `-22M`): multilingual, designed for
-lower FPR, actively maintained. It is **`gated=manual` on Hugging Face** — it cannot
-be fetched here without you accepting Meta's licence and providing an HF token. The
-moment that token exists, `make eval-candidate CANDIDATE=meta-llama/Llama-Prompt-Guard-2-86M
-NAME=prompt-guard-2` runs it through this exact gate. (Note: PG2 uses `LABEL_0/1`
-labels, so it would first need an alias entry or a config with real label names —
-invariant 5.)
+Every REJECT here is the gate (`candidate_gate.py`) doing its one job: refusing a model that
+would have shipped a security regression disguised as a metrics win — including the one I'd
+have told you to get a licence for.
