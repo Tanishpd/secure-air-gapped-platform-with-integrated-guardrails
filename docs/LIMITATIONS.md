@@ -35,8 +35,8 @@ below. If you quote this project anywhere, quote these with it.
 4. **The evidence signature is self-signed**, by a key generated on the very host it attests to, with
    local-clock timestamps. Not attestation, not non-repudiation. (Items 5, 6 and 7.)
 5. **The guardrail metrics are measured; the performance numbers are not.** M6 measured the guardrail
-   corpus (injection headline recall 1.0 and PII recall 1.0 clear their floors; precision 0.81 and benign
-   FPR 0.32 miss theirs — OPEN gaps) and the injection classifier's RSS (0.30 GB, FP32). But **no latency
+   corpus (injection headline recall 1.0 and PII recall 1.0 clear their floors; precision 0.854 now meets its
+   target, while benign FPR 0.24 still misses its 0.10 target — the one OPEN gap) and the injection classifier's RSS (0.30 GB, FP32). But **no latency
    figure and no RAM total** in this repository is a measurement — each is an estimate or a profile-specific
    projection. (Item 18.)
 
@@ -128,8 +128,8 @@ independent evaluation of the model itself — see item 16.
 card states verbatim that it **does not detect jailbreak attacks** and does not handle non-English
 prompts. The heuristic rule table carries that load imperfectly. There is no "solved" state, and the
 metric floors (recall ≥0.90, precision ≥0.85, benign FPR ≤0.10) are **build-gate targets, not
-guarantees**. They have now been measured at M6 — headline recall **1.0** clears its floor, but precision
-**0.81** and benign FPR **0.32 miss** theirs (both OPEN `known_gaps`) — and a passing recall against a
+guarantees**. They have now been measured at M6 — headline recall **1.0** clears its floor, precision
+**0.854** now meets its 0.85 target, but benign FPR **0.24** still **misses** its 0.10 target (the one OPEN `known_gap`) — and a passing recall against a
 self-authored corpus is a regression signal, not a guarantee ([EVALUATION.md](EVALUATION.md) §10).
 **To close it:** Nothing closes it. Reduce it with a maintained classifier, ensembling, per-technique
 recall reporting (jailbreak and indirect families reported separately, never averaged), and continuous
@@ -215,8 +215,8 @@ with backpressure, and a hard cgroup/`ulimit` boundary around each component.
 **Actually true:** Provisioning has run (M1) and the guardrail corpus has been evaluated (M6), so *some*
 numbers are now measured: the injection classifier's session RSS is **0.30 GB** (measured; **FP32** —
 INT8 dynamic quant inverts this DeBERTa-v3, **OQ-1** and **OQ-2** resolved), the embedding parity gate
-passed at **1.6e-07**, and the M6 guardrail metrics are real (recall and PII floors met; precision 0.81
-and benign FPR 0.32 below target — OPEN gaps). But **every latency figure remains an ESTIMATE**, and
+passed at **1.6e-07**, and the M6 guardrail metrics are real (recall and PII floors met; precision 0.854
+now meets its target, while benign FPR 0.24 stays below its 0.10 target — the one OPEN gap). But **every latency figure remains an ESTIMATE**, and
 every derived RAM total remains a **PROJECTION** that depends on which profile you assume — **6.75 GB for
 the embedded profile, 7.60 GB under `PROFILE=demo`** — so a RAM figure quoted without naming its profile
 is meaningless. And a measured floor is still not safety: the corpus and the defence share an author

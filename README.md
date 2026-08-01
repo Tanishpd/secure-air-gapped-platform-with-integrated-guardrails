@@ -76,8 +76,8 @@ Five caveats are load-bearing. A reader who stops at this README should still le
    ([OPERATIONS.md §1](docs/OPERATIONS.md)).
 5. **Guardrail accuracy has been measured; latency and RAM have not.** `make eval` has run
    (M6): injection headline recall is **1.0** and PII recall is **1.0** (EMAIL/CARD/AADHAAR/PERSON),
-   but injection precision (**0.81**) and benign FPR (**0.32**) miss their targets (0.85 / 0.10) and
-   are tracked as OPEN known gaps. Every **latency figure and RAM number** here, by contrast, remains a
+   injection precision (**0.854**) now meets its 0.85 target, but benign FPR (**0.24**) still misses its
+   0.10 target and remains the one OPEN known gap. Every **latency figure and RAM number** here, by contrast, remains a
    target, an estimate or an unverified arithmetic derivation
    ([GUARDRAILS.md §10.2](docs/GUARDRAILS.md), [EVALUATION.md §1](docs/EVALUATION.md)).
 
@@ -146,7 +146,7 @@ implementation. The build order and the definition of each milestone live in
 | [x] | M3 *(done)* | Normalizer (tag/bidi block; ZWJ/ZWNJ strip-not-block; NFKC + homoglyph fold), placeholders (`neutralize ⊇ rehydrate`), depth-2 deobfuscation, weighted heuristics from `config/guardrails.yaml` | no |
 | [x] | M4 *(done)* | PII guardrail: real Presidio+spaCy, `SealedEmailRecognizer` (no phone-home), request-scoped vault (unpicklable, leak-proof, capped), PERSON aliases, BLOCK-list, deadline→503 | no |
 | [x] | M5 *(done)* | Injection guardrail: label resolution from `config.json` (never hardcoded), FP32 ONNX backend, sliding-window scanner (tail attack not truncated away), boot self-test | no |
-| [x] | M6 *(done)* | Metrics gate: attack/benign/PII corpora, `eval_guardrails.py`, measured `docs/metrics/latest.json`. Injection recall 1.0, PII recall 1.0; precision 0.81 / FPR 0.32 miss targets (OPEN known_gaps) | no |
+| [x] | M6 *(done)* | Metrics gate: attack/benign/PII corpora, `eval_guardrails.py`, measured `docs/metrics/latest.json`. Injection recall 1.0, PII recall 1.0; precision 0.854 meets target, benign FPR 0.24 still over 0.10 (one OPEN known_gap) | no |
 | [x] | M7 *(done)* | LLM client: buffered `OllamaClient` (loopback, pinned options, fail-closed), `FakeLLM`, versioned prompts — one real generation validated | no |
 | [x] | M8 *(done)* | RAG ingestion: bge-small ONNX embeddings (CLS+L2), token-aware chunking, hidden-text quarantine, idempotent Qdrant upsert; retrieval verified on :memory: | no |
 | [x] | M9 *(done)* | Retrieval + prompt assembly: neutral-query embed, score-thresholded top-k, deterministic refusal gate, sole nonce-delimited prompt builder | no |
@@ -420,7 +420,7 @@ the hash of that configuration goes into every audit record. All thresholds are 
 | [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | You are mapping controls to GDPR / HIPAA / NIST SP 800-53 — a template, explicitly not legal advice | written |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | You want to know how the corpora were built and how the metric floors were chosen | written |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Day 2: key custody, rotation, retention, ledger-head export, backup and restore | written |
-| `docs/metrics/latest.json` | You need the metrics baseline; regressions >2pp fail the build | **exists** — produced by `make eval` at M6 (injection recall 1.0, PII recall 1.0; precision 0.81 / FPR 0.32 open gaps) |
+| `docs/metrics/latest.json` | You need the metrics baseline; regressions >2pp fail the build | **exists** — produced by `make eval` at M6 (injection recall 1.0, PII recall 1.0; precision 0.854 meets target, benign FPR 0.24 the one open gap) |
 | [docs/adr/0001..0009](docs/adr/) | You want to know *why* a contested choice went the way it did | written (0002 is `Accepted` — the Phase-0 spike ran 2026-08-01) |
 | [CLAUDE.md](CLAUDE.md) | You are an agent editing this repo — 13 non-negotiable invariants | written |
 

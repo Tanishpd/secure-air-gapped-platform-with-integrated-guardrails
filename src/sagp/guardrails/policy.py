@@ -21,6 +21,15 @@ class HeuristicsPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     weights: dict[str, float]
     block_rules: tuple[str, ...] = ()
+    # "Mentions-attack-vocabulary" rules (OVERRIDE_PHRASE, DISREGARD, ROLE_HIJACK,
+    # DAN_PERSONA) fire on benign security docs / contracts / quoted attacks that
+    # merely DISCUSS injection. They are precision-poor alone, so they only count
+    # toward the block decision when the classifier also corroborates (score >=
+    # corroboration_floor) — never enough to override a confident-benign verdict.
+    # High-precision rules (EXFIL_INTENT, MARKDOWN_EXFIL, DELIMITER_SPOOF) are NOT
+    # listed here and keep blocking independently, so exfiltration recall holds.
+    corroboration_only: tuple[str, ...] = ()
+    corroboration_floor: float = Field(default=0.5, gt=0.0, le=1.0)
 
     @field_validator("weights")
     @classmethod

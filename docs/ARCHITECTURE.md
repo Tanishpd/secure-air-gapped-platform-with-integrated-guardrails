@@ -21,7 +21,7 @@ from and must stay consistent with [BLUEPRINT.md](BLUEPRINT.md) (authoritative) 
 |---|---|---|
 | G1 | Run a local LLM with retrieval over a local PDF corpus with **no network egress** from the guarded interpreter | The 9 offline assertions in BLUEPRINT §9.2, each paired with a positive control |
 | G2 | **De-identify** personal data before anything reaches the model | `<EMAIL_ADDRESS_1>` appears in the prompt sent to Ollama, the real address does not — smoke check 12/14 |
-| G3 | **Block prompt injection** before anything reaches the retriever or the model | Corpus metrics measured at M6 (`docs/metrics/latest.json`): headline recall **1.0** (floor ≥ 0.90); precision **0.81** and benign FPR **0.32** *miss* their targets (0.85 / 0.10) and are OPEN `known_gaps`, severity medium (GUARDRAILS §10.2) |
+| G3 | **Block prompt injection** before anything reaches the retriever or the model | Corpus metrics measured at M6 (`docs/metrics/latest.json`): headline recall **1.0** (floor ≥ 0.90); precision **0.854** now *meets* its 0.85 target; benign FPR **0.24** still *misses* its 0.10 target and remains the one OPEN `known_gap`, severity medium (GUARDRAILS §10.2) |
 | G4 | Treat **retrieved document text as untrusted** — the primary threat is a malicious document author | Ingest-time per-chunk scan, the per-collection `<collection>__quarantine` sibling, assembled-context re-scan (C19) |
 | G5 | **Fail closed** everywhere. A guardrail that errors, times out, or returns a partial result blocks | `tests/security/test_guardrail_bypass.py` (AST + runtime spy); §10 of this document |
 | G6 | Leak **no detector signal** across the trust boundary | Every detector block is HTTP 400, byte-identical body, padded to a fixed rejection deadline (120 ms placeholder) |
