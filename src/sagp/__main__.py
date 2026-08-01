@@ -1,23 +1,32 @@
-"""``python -m sagp`` / the ``sagp`` console entrypoint.
+"""``python -m sagp`` → the uvicorn launcher.
 
-The real launcher (uvicorn, single worker, loopback) lands with the FastAPI
-gateway at M10. Until then this refuses to start and points at the supported
-launch path, so nothing accidentally serves a half-built app.
+Runs ONE worker bound to loopback (invariant 11). The app is
+``bootstrap.create_serving_app``, whose lifespan runs the four boot gates
+(manifest verify → RSS budget → build engines → self-test) before serving.
+
+The supported entry point is ``bin/sagp-serve``, which exports the HF/Ollama env
+BEFORE the interpreter starts (pydantic-settings loads too late for
+``HF_HUB_OFFLINE`` to matter — BLUEPRINT ledger row 28). Invoking this module
+directly still works but skips that pre-interpreter export.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 
 
 def main() -> int:
-    sys.stderr.write(
-        "sagp: no server yet — the FastAPI gateway lands at M10.\n"
-        "The only supported launch path will be `bin/sagp-serve` "
-        "(uvicorn --workers 1 --host 127.0.0.1) after `make seal`.\n"
-    )
-    return 1
+    import uvicorn
+
+    from sagp.app.bootstrap import create_serving_app
+
+    host = os.environ.get("SAGP_BIND_HOST", "127.0.0.1")
+    port = int(os.environ.get("SAGP_BIND_PORT", "8000"))
+    # Single worker (invariant 11): a second worker doubles every model's RSS.
+    uvicorn.run(create_serving_app(), host=host, port=port, workers=1, log_level="info")
+    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

@@ -16,7 +16,8 @@ PYTEST  := "$(VENV)/bin/pytest"
 
 .PHONY: help doctor venvs install install-provision lint format typecheck test clean \
         provision verify-manifest audit-verify eval samples \
-        verify verify-online evidence proof smoke
+        verify verify-online evidence proof smoke \
+        seal unseal serve airgap-status
 
 help:  ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -96,6 +97,18 @@ proof:  ## verify + evidence
 
 smoke:  ## 14 numbered functional checks (guard armed, FakeLLM)
 	bash scripts/smoke.sh
+
+seal:  ## ONE-WAY DOOR: write .env.sealed, install .pth guard, PROVISION -> OPERATE (gated)
+	bash scripts/seal.sh
+
+unseal:  ## OPERATE -> PROVISION, one controlled reconnection. Requires REASON="…"
+	$(PYTHON) scripts/unseal.py "$(REASON)"
+
+serve:  ## The only supported launch path: bin/sagp-serve -> uvicorn --workers 1 (loopback)
+	bash bin/sagp-serve
+
+airgap-status:  ## Print phase, seal_generation, unseal count
+	$(PYTHON) -m sagp.netguard.phase status
 
 clean:  ## Remove venvs and caches
 	rm -rf "$(VENV)" "$(VENV_PROVISION)" .pytest_cache .ruff_cache .mypy_cache

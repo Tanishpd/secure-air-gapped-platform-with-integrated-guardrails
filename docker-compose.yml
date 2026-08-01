@@ -1,0 +1,40 @@
+# PROFILE=demo / proof — the Qdrant container that is the demonstration and proof
+# path (the network-isolation boundary this project exists to show). The default
+# runtime backend is EMBEDDED Qdrant (no Docker); this file is only for the demo.
+#
+# ISOLATION IS UNTESTED. ADR-0002 is "Proposed — blocked on make spike-docker".
+# Two open questions this compose file cannot answer on its own (OQ-4/OQ-5):
+#   - can `internal: true` coexist with a published 127.0.0.1:6333 port on Docker
+#     Desktop, or does publishing the port silently defeat the internal network?
+#   - does `enable_ip_masquerade: "false"` actually block egress on Docker Desktop,
+#     where containers egress via a userland VM proxy rather than a host MASQUERADE?
+# Until the spike resolves them, the word for this path is "untested", never
+# "isolated", and no PROFILE=proof verdict about container egress may be published.
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.18.3-unprivileged
+    # Pin the digest in artifacts.lock; the tag is mutable.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      # Loopback ONLY — never 0.0.0.0. If publishing the port defeats `internal`
+      # (OQ-4), isolation must come from the network options below instead.
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    tmpfs:
+      - /tmp
+    networks:
+      - sagp_vec_noegress
+    restart: "no"
+
+networks:
+  sagp_vec_noegress:
+    driver: bridge
+    internal: true # no route to the outside world (UNTESTED alongside a published port)
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"

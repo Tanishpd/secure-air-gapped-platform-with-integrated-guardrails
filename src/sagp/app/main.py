@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from sagp.app.deps import Engines
-from sagp.app.routes import admin, chat, health, ingest
+from sagp.app.routes import admin, airgap, chat, health, ingest
 from sagp.errors import PromptRejected, SagpError
 from sagp.utils.ids import new_incident_id
 from sagp.utils.timing import constant_time_floor
@@ -30,13 +30,19 @@ _REJECTED_BODY = {
 }
 
 
-def create_app(engines: Engines) -> FastAPI:
-    app = FastAPI(title="sagp", version=__version__)
-    app.state.engines = engines
+def register_handlers(app: FastAPI) -> None:
+    """Attach routers, the start-time middleware, and the SagpError→HTTP converter.
+
+    Shared by ``create_app`` (pre-assembled engines, used by tests) and
+    ``bootstrap.create_serving_app`` (engines built in the lifespan). The handler
+    reads settings from ``request.app.state.engines`` at request time, so it works
+    whether engines were set at construction or in the lifespan.
+    """
     app.include_router(health.router)
     app.include_router(chat.router)
     app.include_router(ingest.router)
     app.include_router(admin.router)
+    app.include_router(airgap.router)
 
     @app.middleware("http")
     async def _stamp_start(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -50,6 +56,7 @@ def create_app(engines: Engines) -> FastAPI:
             # incident_id the route already minted (so the 400, the audit record, and
             # the quarantine file share one id); mint only if the route did not.
             t0 = getattr(request.state, "t0", time.monotonic())
+            engines: Engines = request.app.state.engines
             constant_time_floor(t0, engines.settings.rejection_deadline_ms)
             incident_id = exc.incident_id or new_incident_id()
             body = {"error": {**_REJECTED_BODY["error"], "incident_id": incident_id}}
@@ -60,4 +67,9 @@ def create_app(engines: Engines) -> FastAPI:
             content={"error": {"code": exc.code, "message": str(exc)}},
         )
 
+
+def create_app(engines: Engines) -> FastAPI:
+    app = FastAPI(title="sagp", version=__version__)
+    app.state.engines = engines
+    register_handlers(app)
     return app

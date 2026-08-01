@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# The ONLY supported launch path. Sources .env.sealed (so HF_HUB_OFFLINE and the
+# Ollama env are exported BEFORE the interpreter starts — pydantic-settings loads
+# too late for those to matter), then execs the single-worker loopback server.
+#
+# The interpreter itself runs the four boot gates in the lifespan (manifest
+# full-verify → RSS budget → build engines → injection self-test); this script
+# only guarantees the environment is right before the interpreter starts.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+if [[ ! -f "$ROOT/.env.sealed" ]]; then
+  echo "sagp-serve: .env.sealed not found — run 'make seal' first." >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1091
+source "$ROOT/.env.sealed"   # exports HF_*/OLLAMA_*/TLDEXTRACT_CACHE/... before Python starts
+
+exec "$ROOT/.venv/bin/python" -m sagp
