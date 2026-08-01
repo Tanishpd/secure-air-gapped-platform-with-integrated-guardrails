@@ -16,6 +16,7 @@ PYTEST  := "$(VENV)/bin/pytest"
 
 .PHONY: help doctor venvs install install-provision lint format typecheck test test-ci test-all test-e2e clean \
         provision verify-manifest audit-verify eval eval-candidate production-preflight samples \
+        audit-deps sbom \
         verify verify-online evidence proof smoke \
         seal unseal serve airgap-status spike-docker seal-pf unseal-pf \
         ingest query up ollama-up ollama-down
@@ -87,6 +88,23 @@ eval-candidate:  ## Injection-classifier bake-off (online, provision venv): CAND
 
 production-preflight:  ## Honest production go/no-go: automated gates + human checklist (exits nonzero until ready — by design)
 	PYTHONPATH="$(PWD)/src" $(PYTHON) scripts/production_preflight.py
+
+PIP_AUDIT ?= "$(VENV)/bin/pip-audit"
+CYCLONEDX ?= "$(VENV)/bin/cyclonedx-py"
+# Known-accepted advisories (id[,id...]) — none today; append with justification in the PR.
+AUDIT_IGNORE ?=
+
+audit-deps:  ## CVE-scan the installed environment (pip-audit). Fails on a known vulnerability.
+	$(PIP_AUDIT) $(foreach v,$(AUDIT_IGNORE),--ignore-vuln $(v))
+
+sbom:  ## Generate a RUNTIME-ONLY CycloneDX SBOM -> sbom.cdx.json (clean venv, no dev/test tools)
+	rm -rf .sbom-venv
+	"$(PY311)" -m venv .sbom-venv
+	.sbom-venv/bin/pip install --quiet --upgrade pip "setuptools>=83.0.0"
+	.sbom-venv/bin/pip install --quiet -e .
+	$(CYCLONEDX) environment .sbom-venv --output-format JSON > sbom.cdx.json
+	rm -rf .sbom-venv
+	@echo "wrote sbom.cdx.json ($$( $(PYTHON) -c 'import json;print(len(json.load(open("sbom.cdx.json"))["components"]))' ) components, runtime-only)"
 
 verify-manifest:  ## Full manifest verification (recompute every hash + signature)
 	$(PYTHON) -m sagp.netguard.manifest
