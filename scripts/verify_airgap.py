@@ -14,6 +14,16 @@ Writes ``evidence/verify-airgap-<gen>.json`` (unsigned intermediate) for
 
 Run OFFLINE, in OPERATE. Run now (online / unsealed) it correctly returns
 INVALID — that is the design, not a bug.
+
+KNOWN CRITICAL BUG (discovered 2026-08-02 seal rehearsal — see docs/LIMITATIONS.md
+"The proof cannot yet run on a sealed host"): in OPERATE the sealed-runtime `.pth`
+arms the egress guard in THIS orchestrator process, and the guard's subprocess-deny
+then blocks it from spawning its own probe children — so `make verify` / `make proof`
+crash at the first probe with `EgressViolation`. The 9 assertions have only ever been
+exercised in PROVISION (where the `.pth` does not arm). Producing a genuine PASS on a
+sealed host requires an architectural fix to how the harness runs relative to the
+`.pth`; `python -S` is NOT it (it also disables the site setup httpx/Presidio/crypto
+need — assertions 5/8/9 then fail).
 """
 
 from __future__ import annotations
