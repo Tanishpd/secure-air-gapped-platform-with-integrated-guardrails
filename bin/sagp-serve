@@ -10,6 +10,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# H7: no core dumps. Python strings are immutable, so a core dump of this process
+# would recover the request-scoped pseudonym vault (LIMITATIONS 9). Enforce it in the
+# launcher so the sealed runtime is protected regardless of the caller's shell limits.
+ulimit -c 0
+
 if [[ ! -f "$ROOT/.env.sealed" ]]; then
   echo "sagp-serve: .env.sealed not found — run 'make seal' first." >&2
   exit 1
