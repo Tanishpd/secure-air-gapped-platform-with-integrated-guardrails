@@ -17,32 +17,34 @@ not by severity.
 
 ---
 
-## ⚠ Known critical bug — the proof cannot yet run on a sealed host (discovered 2026-08-02)
+## The sealed-host proof path — found broken, then fixed (2026-08-02)
 
-**Wrongly inferred:** "`make proof` produces a green `PASS` once the host is sealed and offline."
-**Actually true:** it currently **crashes**. The first real seal rehearsal (2026-08-02) found that in
-OPERATE the sealed-runtime `.pth` arms the egress guard in the **`make verify` orchestrator process
-itself**, and the guard's subprocess-deny then blocks that orchestrator from spawning its own probe
-children — so `verify` dies at the first probe with `EgressViolation`. The 9 assertions have only ever
-been exercised in **PROVISION**, where the `.pth` deliberately does not arm (which is why they "passed"
-with an INVALID verdict). The central deliverable — a signed `PASS` — is therefore **not currently
-reachable on a real sealed host.**
+**History worth keeping, because it is exactly the class of bug this project exists to surface.** The
+first real seal rehearsal (2026-08-02) found that `make verify` / `make proof` **crashed on a sealed
+host**: in OPERATE the runtime `.pth` arms the egress guard in the `verify` **orchestrator process
+itself**, and the guard's subprocess-deny then blocked that orchestrator from spawning its own probe
+children (`EgressViolation` at the first probe). The 9 assertions had only ever been exercised in
+**PROVISION** (where the `.pth` deliberately does not arm) — which is why they "passed" with an INVALID
+verdict, and why no one had caught it: the real seal had never been run. Root cause is architectural:
+`sys.addaudithook` is process-permanent.
 
-Root cause is architectural: `sys.addaudithook` is process-permanent, so the harness must run each probe
-in a **fresh child** that installs the guard in the mode it tests — but the global `.pth` both (a) arms
-the orchestrator (blocking all child spawns) and (b) pre-arms each child with the *default* config
-(breaking probes that need a custom one, e.g. `loopback_unix`'s `allow_unix`). Fixes explored and
-rejected in the rehearsal: **`python -S`** unblocks the spawn but disables the `site.py` setup that
-httpx / Presidio / cryptography need (assertions 5/8/9 then fail); an **env/CWD signal** to skip arming
-is exploitable (a hostile dependency could spawn an unarmed child — the very reason an env phase-override
-is forbidden); a **runner + allowlist** fixes the spawn but not the pre-armed-child config problem.
-**To close it:** a deliberate design (a structurally-unforgeable "proof child" exemption, or probes as
-guard-internal hooks the armed process can drive without a fresh interpreter, or a dedicated unsealed
-sibling that only ever spawns armed children) plus adversarial review — not a quick patch. Tracked here
-and in [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) as a prerequisite to H1.
+**Fix (shipped):** when the guard is already armed (`egress.is_installed()` — i.e. a sealed host), the
+probes now run **in-process against that real, production-configured guard** (`run_probe_inprocess`)
+instead of spawning children — which needs no spawn, needs no `.pth` workaround, and is if anything
+*more* honest (it tests the guard actually protecting the process). The subprocess path is kept for
+PROVISION, where `verify-online` genuinely needs multiple guard configs. Rehearsal-validated: **all 9
+assertions PASS in-process on a sealed host.** Approaches rejected on the way (recorded so they are not
+retried): `python -S` (also disables the `site.py` setup httpx/Presidio/cryptography need → assertions
+5/8/9 fail); an env/CWD "skip-arming" signal (exploitable — a hostile dependency could spawn an unarmed
+child, the very reason an env phase-override is forbidden); a runner+allowlist (widens the guard and
+still leaves the pre-armed-child config problem).
 
-The **online negative control** (`make verify-online`, run in PROVISION) is unaffected — it ran live and
-blocked every probe. It is the offline `make verify` / `make proof` under a live seal that is broken.
+**Residual operational note (not a bug):** on a sealed host, listener enumeration must use `psutil`
+because the armed guard correctly blocks the `netstat` subprocess fallback — so the real proof is run as
+**`sudo make verify`** (privileges for `psutil.net_connections`); without it, that one check is INVALID
+("cannot prove the negative"), never a false PASS. A green `PASS` therefore still requires: this fix
+(done) + a host with no non-loopback listeners + the physical disconnect + `sudo`. The **online
+negative control** (`make verify-online`, PROVISION) was never affected.
 
 ---
 

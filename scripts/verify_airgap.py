@@ -15,15 +15,16 @@ Writes ``evidence/verify-airgap-<gen>.json`` (unsigned intermediate) for
 Run OFFLINE, in OPERATE. Run now (online / unsealed) it correctly returns
 INVALID — that is the design, not a bug.
 
-KNOWN CRITICAL BUG (discovered 2026-08-02 seal rehearsal — see docs/LIMITATIONS.md
-"The proof cannot yet run on a sealed host"): in OPERATE the sealed-runtime `.pth`
-arms the egress guard in THIS orchestrator process, and the guard's subprocess-deny
-then blocks it from spawning its own probe children — so `make verify` / `make proof`
-crash at the first probe with `EgressViolation`. The 9 assertions have only ever been
-exercised in PROVISION (where the `.pth` does not arm). Producing a genuine PASS on a
-sealed host requires an architectural fix to how the harness runs relative to the
-`.pth`; `python -S` is NOT it (it also disables the site setup httpx/Presidio/crypto
-need — assertions 5/8/9 then fail).
+SEALED-HOST EXECUTION (fixed 2026-08-02): on a sealed host the runtime `.pth` has
+already armed the guard in THIS orchestrator process, and the guard's subprocess-deny
+would block it from spawning probe children. So when the guard is already installed
+(``egress.is_installed()``) the probes run IN-PROCESS against that real, armed guard
+(``probes.run_probe_inprocess``) — more honest than a fresh child, and no spawn needed.
+When NOT armed (PROVISION / dev) it spawns children that self-install, as verify_online
+needs. Note: on a sealed host, listener enumeration falls to psutil (netstat is itself
+blocked by the armed guard) — run ``sudo make verify`` so it has the privileges to
+enumerate, else that check is INVALID (cannot prove the negative). History in
+docs/LIMITATIONS.md "The sealed-host proof path (fixed 2026-08-02)".
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from sagp.netguard import egress  # noqa: E402
 from sagp.netguard import evidence as ev  # noqa: E402
 from sagp.netguard import manifest as mf  # noqa: E402
 from sagp.netguard import probes as pb  # noqa: E402
@@ -140,36 +142,49 @@ def run_all_assertions() -> dict[str, Any]:
     state = json.loads((ROOT / ".airgap" / "state.json").read_text())
     seal_generation = int(state.get("seal_generation", 0))
 
+    # On a SEALED host the .pth has already armed the guard in this process; run the
+    # probes in-process against that real, production-configured guard (spawning a
+    # child is both blocked by the guard's subprocess-deny and unnecessary). When NOT
+    # armed (PROVISION / dev), spawn fresh children that self-install — as verify_online
+    # requires. See docs/LIMITATIONS.md "The proof cannot yet run on a sealed host".
+    armed = egress.is_installed()
+    run = pb.run_probe_inprocess if armed else pb.run_probe
+
     # Assertion 1 — guard installed, both layers.
-    a1 = pb.run_probe(_GUARD_RECEIPT)
+    a1 = run(_GUARD_RECEIPT)
     guard_ok = a1.outcome == "allowed"
 
-    # Assertions 2–7 — egress probe blocked + positive control allowed.
+    # Assertions 2–7 — egress probe blocked + positive control allowed. The AF_UNIX
+    # positive control (loopback_unix) needs a custom allow_unix the PRODUCTION guard
+    # does not carry, so in-process it cannot pass; use loopback_tcp there — proving the
+    # guard is alive while docker.sock is blocked, which is the honest OPERATE claim
+    # (the real config allows no AF_UNIX at all).
+    af_unix_positive = "loopback_tcp" if armed else "loopback_unix"
     pairs = [
         (2, "L1 TCP block", "l1_tcp", "loopback_tcp"),
         (3, "L2 raw-socket block", "l2_raw_socket", "loopback_tcp"),
         (4, "getaddrinfo block", "getaddrinfo", "loopback_getaddrinfo"),
         (5, "httpx block", "httpx", "loopback_httpx"),
         (6, "subprocess egress block", "subprocess_curl", "subprocess_ollama"),
-        (7, "AF_UNIX / docker.sock block", "af_unix_docker", "loopback_unix"),
+        (7, "AF_UNIX / docker.sock block", "af_unix_docker", af_unix_positive),
     ]
     assertions: list[Assertion] = [
         Assertion(1, "guard installed (L1+L2)", guard_ok, a1.detail or "both layers active")
     ]
     probe_detail: dict[str, Any] = {"guard_receipt": a1.__dict__}
-    for n, name, egress, positive in pairs:
-        er = pb.run_probe(pb.EGRESS_PROBES[egress])
-        pr = pb.run_probe(pb.POSITIVE_CONTROLS[positive])
+    for n, name, egress_name, positive in pairs:
+        er = run(pb.EGRESS_PROBES[egress_name])
+        pr = run(pb.POSITIVE_CONTROLS[positive])
         ok = er.outcome == "blocked" and pr.outcome == "allowed"
         assertions.append(
             Assertion(n, name, ok, f"egress={er.outcome} control={pr.outcome}")
         )
-        probe_detail[egress] = er.__dict__
+        probe_detail[egress_name] = er.__dict__
         probe_detail[f"{positive}#{n}"] = pr.__dict__
 
     # Assertion 8 — sealed email zero-violations; stock contrast DOES fetch.
-    sealed = pb.run_probe(pb.SEALED_EMAIL)
-    stock = pb.run_probe(pb.STOCK_EMAIL)
+    sealed = run(pb.SEALED_EMAIL)
+    stock = run(pb.STOCK_EMAIL)
     a8_ok = sealed.outcome == "allowed" and sealed.violations == 0
     assertions.append(
         Assertion(
