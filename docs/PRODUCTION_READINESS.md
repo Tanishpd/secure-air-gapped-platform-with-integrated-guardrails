@@ -66,12 +66,20 @@ was measured and it fails the same gate, so the Meta licence + PII form is not w
 | Full suite | `make test-all` / `make test-e2e` | green | needs models + Ollama (provisioned host) |
 | Metrics | `make eval` | floors hold, no >2pp regression | regenerates `docs/metrics/latest.json` |
 | Smoke | `make smoke` | 14/14 | end-to-end, guard armed |
-| Air-gap assertions | `make verify` | PASS | **INVALID until sealed + offline** — this is correct on a dev host |
-| Proof | `make proof` | signed `PASS` | verify + evidence; the artifact the project exists to produce |
+| Air-gap assertions | `make verify` | PASS | **INVALID until sealed + offline** on a dev host; **⚠ also currently CRASHES on a sealed host** — see the known critical bug below |
+| Proof | `make proof` | signed `PASS` | verify + evidence — **blocked by the same bug**; the signed PASS is not yet reachable |
 
 `make verify` returning `INVALID` here is not a failure — it fails identically whether the
 network is merely absent or genuinely blocked, which is why a `PASS` is only meaningful
 after the physical disconnect (H1).
+
+> **⚠ Known critical bug (2026-08-02 rehearsal), prerequisite to H1.** On a *sealed* host
+> `make verify` / `make proof` currently **crash**: the sealed-runtime `.pth` arms the guard in
+> the verify orchestrator, whose subprocess-deny then blocks it from spawning its own probe
+> children. The 9 assertions have only ever run in PROVISION (guard not armed). So the signed
+> `PASS` is **not yet reachable on a real sealed host** — fixing this is a hard prerequisite to
+> H1, not part of it. Full root cause + rejected fixes in
+> [LIMITATIONS.md](LIMITATIONS.md#-known-critical-bug--the-proof-cannot-yet-run-on-a-sealed-host-discovered-2026-08-02).
 
 ### Last full gate run — 2026-08-02 (this provisioned dev host)
 
