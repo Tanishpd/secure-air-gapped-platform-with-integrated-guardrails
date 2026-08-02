@@ -66,20 +66,20 @@ was measured and it fails the same gate, so the Meta licence + PII form is not w
 | Full suite | `make test-all` / `make test-e2e` | green | needs models + Ollama (provisioned host) |
 | Metrics | `make eval` | floors hold, no >2pp regression | regenerates `docs/metrics/latest.json` |
 | Smoke | `make smoke` | 14/14 | end-to-end, guard armed |
-| Air-gap assertions | `make verify` | PASS | **INVALID until sealed + offline** on a dev host; **⚠ also currently CRASHES on a sealed host** — see the known critical bug below |
-| Proof | `make proof` | signed `PASS` | verify + evidence — **blocked by the same bug**; the signed PASS is not yet reachable |
+| Air-gap assertions | `make verify` | PASS | INVALID until sealed + offline on a dev host. On a sealed host it now runs **in-process** (fixed 2026-08-02); run as `sudo make verify` so listener enumeration works |
+| Proof | `make proof` | signed `PASS` | verify + evidence — now reachable on a sealed host (needs the fix above + a clean host + disconnect + sudo) |
 
 `make verify` returning `INVALID` here is not a failure — it fails identically whether the
 network is merely absent or genuinely blocked, which is why a `PASS` is only meaningful
 after the physical disconnect (H1).
 
-> **⚠ Known critical bug (2026-08-02 rehearsal), prerequisite to H1.** On a *sealed* host
-> `make verify` / `make proof` currently **crash**: the sealed-runtime `.pth` arms the guard in
-> the verify orchestrator, whose subprocess-deny then blocks it from spawning its own probe
-> children. The 9 assertions have only ever run in PROVISION (guard not armed). So the signed
-> `PASS` is **not yet reachable on a real sealed host** — fixing this is a hard prerequisite to
-> H1, not part of it. Full root cause + rejected fixes in
-> [LIMITATIONS.md](LIMITATIONS.md#-known-critical-bug--the-proof-cannot-yet-run-on-a-sealed-host-discovered-2026-08-02).
+> **Sealed-host proof path — fixed 2026-08-02.** The first seal rehearsal found `make verify` /
+> `make proof` **crashed** on a sealed host (the runtime `.pth` armed the verify orchestrator, whose
+> subprocess-deny then blocked it from spawning its probe children). **Fixed:** on a sealed host the
+> probes now run **in-process** against the already-armed guard (`run_probe_inprocess`) — rehearsal-
+> validated, all 9 assertions PASS. Run the real proof as **`sudo make verify`** (the armed guard blocks
+> the `netstat` listener-enumeration fallback, so `psutil` needs privileges). Full history in
+> [LIMITATIONS.md](LIMITATIONS.md).
 
 ### Last full gate run — 2026-08-02 (this provisioned dev host)
 

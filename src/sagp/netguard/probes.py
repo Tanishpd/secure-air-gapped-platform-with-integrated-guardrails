@@ -189,6 +189,55 @@ def run_probe(probe: Probe, *, timeout: float = 40.0) -> ProbeResult:
     )
 
 
+def run_probe_inprocess(probe: Probe) -> ProbeResult:
+    """Run ``probe`` in THIS process against the ALREADY-ARMED guard.
+
+    Used by ``make verify`` in OPERATE, where the sealed-runtime ``.pth`` has already
+    installed the guard in this (the orchestrator) process. Spawning a fresh child is
+    both blocked (the guard's subprocess-deny) and unnecessary — the real, production-
+    configured guard is right here, so we exercise it directly, which is if anything
+    MORE honest than a child that re-installs. No ``install`` is run (already armed, and
+    it is install-once anyway); a probe whose ``install`` sets a custom config (only
+    ``loopback_unix``) is therefore not used on this path (see verify_airgap.py).
+
+    ``violations()`` is a process-wide deque, so probes run in sequence accumulate it.
+    We expose a PROBE-SCOPED ``violations()`` in the exec namespace (only entries this
+    probe added) so a body's absolute check like ``assert len(violations()) == 0``
+    means "this probe touched the network N times", and report that delta.
+    """
+    import os as _os
+    import socket as _socket_mod
+    import subprocess as _sp  # nosec B404
+    import time as _time
+
+    from sagp.netguard.egress import EgressViolation, install_egress_guard
+    from sagp.netguard.egress import violations as _violations
+
+    ns: dict[str, object] = {
+        "socket": _socket_mod,
+        "subprocess": _sp,
+        "os": _os,
+        "EgressViolation": EgressViolation,
+        "install_egress_guard": install_egress_guard,  # present for parity; a no-op (install-once)
+    }
+    if probe.setup:
+        # Our own fixed probe setup (bind a loopback server, etc.) — never user input.
+        exec(textwrap.dedent(probe.setup).strip(), ns)  # nosec B102
+    before = len(_violations())
+    ns["violations"] = lambda: _violations()[before:]  # probe-scoped view
+    t0 = _time.perf_counter()
+    outcome, detail = "allowed", ""
+    try:
+        # Our own fixed probe body against the already-armed guard.
+        exec(textwrap.dedent(probe.body).strip(), ns)  # nosec B102
+    except EgressViolation as exc:
+        outcome, detail = "blocked", str(exc)[:200]
+    except Exception as exc:  # noqa: BLE001 — any probe failure is reported, not raised
+        outcome, detail = "error", f"{type(exc).__name__}: {str(exc)[:200]}"
+    ms = round((_time.perf_counter() - t0) * 1000, 3)
+    return ProbeResult(probe.name, outcome, len(_violations()) - before, ms, detail)
+
+
 # --- assertion 8: the sealed-email contrast (violation COUNT, not exception) ---
 # tldextract swallows the raised EgressViolation and falls back to its snapshot,
 # so the exception never propagates — but the guard still RECORDS the attempt in
