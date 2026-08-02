@@ -63,3 +63,22 @@ def test_safetensors_excluded_from_unmanifested_check(tmp_path: Path) -> None:
     (tmp_path / "models/hf/model.safetensors").write_bytes(b"weights")
     res = manifest.verify(tmp_path, mode="full")
     assert res.ok, res.problems
+
+
+def test_os_cruft_excluded_from_unmanifested_check(tmp_path: Path) -> None:
+    # macOS Finder scatters .DS_Store; it must not fail the seal (rehearsal 2026-08-02).
+    _write_manifest(tmp_path, {"models/hf/a.txt": b"hello"})
+    (tmp_path / "models/.DS_Store").write_bytes(b"\x00\x00\x00")
+    (tmp_path / "models/hf/.DS_Store").write_bytes(b"\x00\x00\x00")
+    res = manifest.verify(tmp_path, mode="full")
+    assert res.ok, res.problems
+
+
+def test_unmanifested_check_still_catches_a_planted_dotfile(tmp_path: Path) -> None:
+    # The OS-cruft exclusion is by exact name, not a wildcard: any OTHER unexpected
+    # file (even a dotfile) still fails — the exclusion is not a hole in invariant 4.
+    _write_manifest(tmp_path, {"models/hf/a.txt": b"hello"})
+    (tmp_path / "models/.hidden_payload").write_bytes(b"surprise")
+    res = manifest.verify(tmp_path, mode="full")
+    assert not res.ok
+    assert any("unmanifested" in p for p in res.problems)

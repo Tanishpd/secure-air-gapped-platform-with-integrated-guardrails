@@ -24,7 +24,11 @@ MANIFEST_REL = Path("models") / "MANIFEST.json"
 PUBKEY_REL = Path(".airgap") / "keys" / "manifest_ed25519.pub"
 SIDECAR_NAMES = {"MANIFEST.json", "MANIFEST.json.sha256", "MANIFEST.json.sig", "README.md"}
 EXCLUDE_SUFFIXES = ("model.safetensors",)
-EXCLUDE_NAMES = {"serve.log"}
+# serve.log is runtime output; the rest are content-irrelevant OS/Finder cruft that
+# would otherwise fail the seal on macOS (rehearsal 2026-08-02: .DS_Store under models/
+# refused `make seal`). Named exactly — never a wildcard — so a planted artifact still
+# fails the unmanifested-file check (invariant 4).
+EXCLUDE_NAMES = {"serve.log", ".DS_Store", ".localized", "Thumbs.db", "desktop.ini"}
 
 
 @dataclass
