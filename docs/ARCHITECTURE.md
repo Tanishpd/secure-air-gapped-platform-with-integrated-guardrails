@@ -4,7 +4,7 @@ The deep technical reference for `sagp` — process boundaries, the numbered req
 data model, module dependency rules, and the concurrency, memory and fail-closed models. It is derived
 from and must stay consistent with [BLUEPRINT.md](BLUEPRINT.md) (authoritative) and [PLAN.md](PLAN.md).
 
-> As of 2026-08-01 the code this document describes is **built and tested** (M0–M14; 258 tests pass,
+> As of 2026-08-01 the code this document describes is **built and tested** (M0–M14; 280 tests pass,
 > `make smoke` is 14/14). A few figures are now MEASURED and their markers are dropped — the injection
 > ONNX session RSS (0.30 GB, OQ-1 resolved), the embedding parity gate (1.6e-07), and the M6 guardrail
 > metrics in `docs/metrics/latest.json`. Every number that has **not** been measured on the target M2
@@ -714,7 +714,7 @@ per component.
 ## 10. Fail-closed matrix
 
 There is exactly one fail mode: closed. Every row below is backed by a test in `tests/security/` or
-`tests/integration/`; those suites exist and pass as of M11 (258 tests green overall).
+`tests/integration/`; those suites exist and pass as of M11 (280 tests green overall).
 
 | Component / condition | Behaviour | HTTP | Audit `decision` |
 |---|---|---|---|

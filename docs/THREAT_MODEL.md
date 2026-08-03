@@ -12,7 +12,7 @@ what it does not defend. It is the security reference for the design captured in
 
 This threat model was **written at milestone M-DOCS** and revised at **M15** against the built system. As
 of 2026-08-01, M0–M14 are complete: `src/`, `tests/`, `scripts/` and `config/` exist, the guardrail
-pipeline runs, the egress guard is installed and verified, and 258 tests pass. Every control it cites is
+pipeline runs, the egress guard is installed and verified, and 280 tests pass. Every control it cites is
 derived from the reconciled specification in [BLUEPRINT.md](BLUEPRINT.md) §0, §5, §9 and §13 and is
 traceable to a numbered stage (`C0`–`C26` on the chat path, `I1`–`I11` on the ingest path) in that
 document.
@@ -292,7 +292,7 @@ dishonest.
 | Trusted timestamping (RFC 3161) | ❌ | Local clock; backdating is undetectable |
 | Independent third-party attestation | ❌ | Evidence reports are self-signed |
 | SCIF / physical access control | ❌ | Out of scope entirely |
-| Signed SBOM, SLSA provenance | ❌ | Hash-pinned lockfiles only |
+| Signed SBOM, SLSA provenance | ❌ | Hash-pinned deps + an **unsigned** CycloneDX SBOM (`make sbom`) + a `pip-audit` CVE gate + bandit SAST in CI; no *signed* SBOM / Sigstore / SLSA attestation |
 
 The honest summary: this template reproduces the **software** shape of an enclave and instruments it so
 the claims are checkable. It reproduces none of the **hardware or procedural** shape.

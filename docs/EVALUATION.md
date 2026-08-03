@@ -614,9 +614,10 @@ present it as such.
 
 The one measured gap that tuning cannot close is the benign FPR (0.24 vs a 0.10 target): every residual
 false positive is the archived classifier over-firing on quoted-attack English or on non-English text
-(§5, [GUARDRAILS.md](GUARDRAILS.md) §11). Closing it needs a **better model**, and swapping a security
-classifier blind is exactly how you trade a benign-FPR win for an attack you no longer catch. So the
-swap is a gated, evidence-based operation.
+(§5, [GUARDRAILS.md](GUARDRAILS.md) §11). Swapping a security classifier blind is exactly how you trade a
+benign-FPR win for an attack you no longer catch — so the swap is a gated, evidence-based operation, and
+**the whole field has now been swept: no off-the-shelf model closes the gap without regressing recall.
+It needs an ensemble or a fine-tune, not a swap.**
 
 **The bake-off** (`scripts/eval_classifier_candidate.py`, `make eval-candidate CANDIDATE=… NAME=…`)
 runs in `.venv-provision` (torch/transformers) and scores a candidate through the **real** decision
@@ -636,10 +637,15 @@ is invariant 12 made mechanical:
 | `RECOMMEND_PROCEED_TO_EXPORT` | recall held **and** FPR or precision improved → advance to ONNX export + `07_gates` parity/RSS, **not** deploy |
 | `NO_IMPROVEMENT` | recall held but the ceiling did not move |
 
-**Measured so far.** Baseline-vs-baseline reproduces `latest.json` exactly (recall 1.0, precision 0.854,
-FPR 0.24), confirming the torch stand-in. The v1 ancestor `deepset/deberta-v3-base-injection` holds
-recall on every family but nearly **doubles** benign FPR (0.24 → 0.44, precision 0.85 → 0.76) →
-`NO_IMPROVEMENT` — data quantifying why v2 is the baseline, and the gate declining a worse model. The
-real target, **Llama Prompt Guard 2** (multilingual, lower-FPR, maintained), is `gated=manual` on
-Hugging Face: it needs an accepted Meta licence + an HF token this host does not have. When that exists,
-it runs through this identical gate — no code change.
+**Measured — the full sweep (8 candidates, 29M–279M).** Baseline-vs-baseline reproduces `latest.json`
+exactly (recall 1.0, precision 0.854, FPR 0.24), confirming the torch stand-in. Then the credible field
+was swept, **including both Llama Prompt Guard 2 variants** via the ungated ONNX re-host
+`gravitee-io/Llama-Prompt-Guard-2-{86,22}M-onnx` (real `BENIGN`/`MALICIOUS` labels, so no Meta gate was
+needed to *measure* it). **Every model that lowers the FPR does so by regressing recall — collapsing
+family F (indirect/document-planted injection) to 0.25–0.75; the baseline is the only one holding F at
+1.0.** Prompt Guard 2 is the sharpest case: best FPR (0.04) and precision (0.97) of anything tested, but
+it drops family F to 0.25 and jailbreaks (B) to 0.50 → `REJECT_RECALL_REGRESSION`. So the Meta licence +
+PII form is **not worth pursuing** — PG2 fails the same gate. The FPR gap is a genuine recall/FPR
+**frontier**, not a missing model: closing it needs an **ensemble** (baseline for recall + a low-FPR
+corroborator that never vetoes a detection) or a **fine-tune** on the deployed corpus. Full scorecards:
+[`docs/metrics/candidates/`](metrics/candidates/).
