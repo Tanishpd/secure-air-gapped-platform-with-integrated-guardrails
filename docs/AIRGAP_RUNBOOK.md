@@ -7,7 +7,7 @@ this runbook does **not** prove.
 
 > **Status, 2026-08-01 — the targets exist and were exercised; the seal itself was not.** M0–M14 are
 > complete: `src/`, `tests/`, `scripts/`, `config/`, the `Makefile`, `docker-compose.yml` and
-> `docs/metrics/latest.json` all exist, 258 tests pass, and `make smoke` reports 14/14. Provisioning ran
+> `docs/metrics/latest.json` all exist, 280 tests pass, and `make smoke` reports 14/14. Provisioning ran
 > at M1 (models fetched at pinned revisions, gates run, `MANIFEST.json` signed) and the online negative
 > control ran live at M13. **What has NOT happened:** a real `make seal` plus physical disconnect (this
 > dev host is deliberately kept in `PROVISION`), and the host-specific targets `seal-pf`, `ollama-up`,

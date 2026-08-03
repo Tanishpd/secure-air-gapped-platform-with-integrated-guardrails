@@ -10,7 +10,7 @@ model, and prompt-injection blocking before anything reaches the retriever. The 
 
 **Where we are.** As of 2026-08-01, M-DOCS and **M0–M14 are complete, merged and tested**. `src/`,
 `tests/`, `scripts/`, `config/`, `bin/`, the Makefile, `docker-compose.yml` and `pyproject.toml` all
-exist; the full suite is **258 tests passing**, `make lint`/`typecheck` are green, and `make smoke` is
+exist; the full suite is **280 tests passing**, `make lint`/`typecheck` are green, and `make smoke` is
 **14/14 PASS**. Indirect injection (M12), the offline demonstration harness (M13) and hardening (M14)
 are built. The dev host is deliberately kept in **PROVISION** phase — never sealed for real — so no
 green air-gap `PASS` has been produced (verdict `INVALID` by design). **M15 — this pass — revisits the

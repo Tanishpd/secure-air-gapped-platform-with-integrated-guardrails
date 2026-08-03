@@ -2,7 +2,7 @@
 
 > **Status (2026-08-01): this is the arbitrated technical spec of a system now largely built.**
 > M-DOCS and M0–M14 are complete, merged and tested — `src/`, `tests/`, `scripts/`, `config/`, `bin/`,
-> the Makefile and `docker-compose.yml` all exist; the full suite is 258 tests passing, `make lint`/
+> the Makefile and `docker-compose.yml` all exist; the full suite is 280 tests passing, `make lint`/
 > `typecheck` are green, and `make smoke` is 14/14 PASS. Where a test, gate, Make target or script is
 > described below it now exists and runs. **A few figures are now MEASURED** — the injection classifier
 > is FP32 ONNX (not INT8; OQ-2 resolved), its session RSS is 0.30 GB (OQ-1 resolved), the embedding

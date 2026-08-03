@@ -5,12 +5,16 @@ an estimate. As of 2026-08-01. Every figure below carries a `MEASURED` or
 `(ESTIMATE)` marker — the project's whole ethos is refusing to launder one into the
 other, so this report shows the split rather than a single confident number.*
 
-> **Status:** M-DOCS → M15 complete, plus the Docker spike, the pf anchor, and the
-> full operator surface. **262 tests pass**; `make lint` + `make typecheck`
+> **Status:** M-DOCS → M15 complete, plus the Docker spike, the pf anchor, the full
+> operator surface, and CI + supply-chain hardening (CVE gate, SBOM, bandit SAST,
+> dormant CodeQL, Dependabot). **280 tests pass**; `make lint` + `make typecheck`
 > (mypy strict) green; `make smoke` **14/14**. The offline proof harness is built
-> and self-tested; on this unsealed dev host `make verify` honestly returns
-> **`INVALID`** by design. The one thing genuinely not done is the human-only
-> physical seal + disconnect + `make proof`.
+> and self-tested — including the sealed path: the 2026-08-02 seal rehearsal found
+> and **fixed** a critical bug (`make verify`/`make proof` crashed on a sealed host;
+> the probes now run **in-process** against the armed guard, all 9 rehearsal-validated).
+> On this unsealed dev host `make verify` honestly returns **`INVALID`** by design.
+> The one thing genuinely not done is the human-only physical seal + disconnect +
+> `sudo make proof` on a clean, dedicated host.
 
 ---
 
@@ -79,7 +83,7 @@ construction.
 | App-process RSS (loaded) | **≈0.7 GB** | `make bench`, single-host/idle; ~0.66–0.81 GB across runs — well under the 1.16 GB projection; excludes macOS + Ollama |
 | Single-request latency | **~4–5 s / ~1 s** | benign chat (Ollama-generation-bound) / injection→400; `make bench`, single-request, varies run-to-run, **not load-tested** |
 | Under concurrency (burst) | **sheds load gracefully** | `make bench-load`, conc 12 reject path: `{503: 22, 400: 8}` — 22 shed with a fast 503 (p50 ~29 ms), 8 served, 0 errors, RSS bounded ~0.7–1.0 GB. Invariant-11 `CapacityLimiter(2)` + admission gate (`ServiceBusy`→503) implemented + verified. Burst, not a soak; throughput CPU/Ollama-bound |
-| Test suite / smoke | **262 / 14-of-14** | `make test`, `make smoke` |
+| Test suite / smoke | **280 / 14-of-14** | `make test`, `make smoke` |
 
 ### (ESTIMATE) / PROJECTION / OPEN
 
@@ -143,9 +147,11 @@ none:
 
 ## 8. The one step software can't take
 
-The harness is built and self-tests. It honestly returns `INVALID` on this
-unsealed dev host — the phase isn't `OPERATE`, and non-loopback listeners are
-present. Only a human on a real box can close the loop:
+The harness is built and self-tests — including the sealed path (the 2026-08-02
+rehearsal found and fixed a crash there; probes now run in-process against the armed
+guard). It honestly returns `INVALID` on this unsealed dev host — the phase isn't
+`OPERATE`, and non-loopback listeners are present. Only a human on a real box can
+close the loop (run the proof as `sudo make verify`):
 
 1. **`make seal`** — gated on the invariant checks (manifest full-verify + valid
    signature + a green online negative control). Flips `PROVISION → OPERATE`,
@@ -158,7 +164,7 @@ present. Only a human on a real box can close the loop:
 ## 9. Reproduce it
 
 ```
-make test          # 262 tests (FakeLLM/FakeScorer + real ONNX/spaCy where provisioned)
+make test          # 280 tests (FakeLLM/FakeScorer + real ONNX/spaCy where provisioned)
 make smoke         # 14 numbered functional checks, guard armed  -> 14/14
 make eval          # corpus metrics -> docs/metrics/latest.json
 make verify        # the 9 offline assertions + invariant-13 verdict (INVALID until sealed)

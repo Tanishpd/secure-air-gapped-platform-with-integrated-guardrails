@@ -139,14 +139,17 @@ file before any application code imports.
 
 ## Status
 
-**M0–M14 are built, merged and tested (as of 2026-08-01).** `src/`, `tests/`, `scripts/`, `config/`,
-`bin/`, `docs/metrics/latest.json`, the Makefile, `docker-compose.yml` and `pyproject.toml` all exist;
-258 tests pass, `make lint`/`make typecheck` are green, and `make smoke` reports 14/14. Only **M15**
-(this documentation-against-measurements pass) remains. The dev host is deliberately kept in the
-`PROVISION` phase and has never been sealed for real, so the end-to-end air-gap verdict is `INVALID` by
-design (see [The air-gap demonstration](#the-air-gap-demonstration)). The `M-DOCS` pass put the plan and
-the reconciled specification into the repository *before* any code, so the reasoning shipped with the
-implementation. The build order and the definition of each milestone live in
+**M0–M15 are built, merged and tested, plus CI + supply-chain hardening.** `src/`, `tests/`, `scripts/`,
+`config/`, `bin/`, `docs/metrics/latest.json`, the Makefile, `docker-compose.yml` and `pyproject.toml`
+all exist; **280 tests pass**, `make lint`/`make typecheck` are green, `make smoke` reports 14/14, and CI
+runs lint + types + the model-free subset on every push. The **2026-08-02 seal rehearsal found and fixed
+a critical bug** — `make verify`/`make proof` used to crash on a sealed host; the proof now runs its
+probes **in-process against the armed guard** (all 9 assertions rehearsal-validated). The dev host is
+deliberately kept in the `PROVISION` phase and has never been *left* sealed, so the end-to-end air-gap
+verdict is `INVALID` by design (see [The air-gap demonstration](#the-air-gap-demonstration)); a green
+`PASS` needs a clean, dedicated, disconnected host run as `sudo make proof`. The `M-DOCS` pass put the
+plan and the reconciled specification into the repository *before* any code, so the reasoning shipped
+with the implementation. The build order and the definition of each milestone live in
 [docs/PLAN.md §7](docs/PLAN.md) and [BLUEPRINT.md §10](docs/BLUEPRINT.md).
 
 | Done | Milestone | Deliverable | Needs network |
@@ -165,10 +168,10 @@ implementation. The build order and the definition of each milestone live in
 | [x] | **M10** *(done — first demoable slice)* | FastAPI `/v1/chat` wiring C0–C26: input guardrails → retrieval/refusal → mask → LLM → output guardrail → uniform 400. Validated against real Ollama | no (FakeLLM in tests) |
 | [x] | **M11** *(done)* | Net-guard: dual-layer egress guard (L1 socket monkeypatch + L2 PEP 578 audit hook), `.pth` boot module reading `.airgap/state.json`, AF_UNIX deny-by-default, argv-exact subprocess allowlist. Raw-socket L1 bypass verified caught by L2 | no |
 | [x] | **M12** *(done)* | Indirect-injection layer: ingest-time per-chunk document scan (clean/suspect/quarantine), never-retrieved `__quarantine` sibling collection, C19 assembled-context drop-and-continue, guarded `POST /v1/ingest` | no |
-| [x] | **M13** *(harness done)* | **THE DEMONSTRATION** — `verify_airgap.py` (9 offline assertions + invariant-13 verdict), `verify_online.py` (paired negative control), signed evidence report + hash-chained ledger, 14-check `smoke.sh`. All 9 assertions PASS; the verdict is `INVALID` until an actual seal + disconnect (by design) | **offline — the deliverable** |
-| [x] | **M14** *(hardening + deployment done)* | Audit sink in the chat path (hash-chained `AuditEvent`, types/counts only), `incident_id`-linked quarantine, `GET /v1/admin/incident/{id}` (`pii:reveal`), rate limiting → 429; **plus the deployment/launch subsystem**: `make seal`/`unseal` one-way door (gated), projected-RSS boot refusal, `bin/sagp-serve` + four-gate lifespan, `GET /airgap/status`, `docker-compose.yml` (demo), and `make seal-pf` (pf anchor `deploy/pf/com.sagp`, syntax-validated, operator-loaded). Operator surface complete: `make ingest`/`query` CLIs (validated end-to-end), `up`/`ollama-up`, `/readyz` measured RSS, `GET /v1/admin/quarantine/{collection}`. `make smoke` 14/14. **Left:** only the human-only physical seal + disconnect + `make proof` | no |
+| [x] | **M13** *(harness done; sealed-host bug fixed 2026-08-02)* | **THE DEMONSTRATION** — `verify_airgap.py` (9 offline assertions + invariant-13 verdict), `verify_online.py` (paired negative control), signed evidence report + hash-chained ledger, 14-check `smoke.sh`. The first seal rehearsal found `verify`/`proof` crashed on a sealed host (the `.pth`-armed orchestrator couldn't spawn probe children); **fixed** — probes now run **in-process** against the armed guard (all 9 PASS in-process). Run the real proof as `sudo make verify`. Verdict is `INVALID` until an actual clean seal + disconnect (by design) | **offline — the deliverable** |
+| [x] | **M14** *(hardening + deployment done)* | Audit sink in the chat path (hash-chained `AuditEvent`, types/counts only), `incident_id`-linked quarantine, `GET /v1/admin/incident/{id}` (`pii:reveal`), rate limiting → 429; **plus the deployment/launch subsystem**: `make seal`/`unseal` one-way door (gated), projected-RSS boot refusal, `bin/sagp-serve` + four-gate lifespan, `GET /airgap/status`, `docker-compose.yml` (demo), and `make seal-pf` (pf anchor `deploy/pf/com.sagp`, syntax-validated, operator-loaded). Operator surface complete: `make ingest`/`query` CLIs (validated end-to-end), `up`/`ollama-up`, `/readyz` measured RSS, `GET /v1/admin/quarantine/{collection}`. `make smoke` 14/14. **Left:** the human-only physical seal + disconnect + `sudo make proof` on a clean dedicated host | no |
 | [x] | **M15** *(done)* | Documentation swept correct-as-measured — status banners flipped, measured figures landed, deviations reconciled, every honest limit preserved | no |
-| [x] | *post-M15* | Docker spike (OQ-4/OQ-5 → ADR-0002 Accepted), the `com.sagp` pf anchor, and the operator surface (`ingest`/`query` CLIs, `up`/`ollama-up`, quarantine-review route, `/readyz` RSS) | mixed |
+| [x] | *post-M15* | Docker spike (OQ-4/OQ-5 → ADR-0002 Accepted), the `com.sagp` pf anchor, the operator surface (`ingest`/`query` CLIs, `up`/`ollama-up`, quarantine-review route, `/readyz` RSS); **CI + supply-chain hardening** (CVE gate, SBOM, SHA-pinned actions, bandit SAST, dormant CodeQL, Dependabot, `SECURITY.md`, app `Dockerfile`, `make production-preflight`); the **classifier sweep** (8 candidates incl. Prompt Guard 2 — none beats the baseline); and the **sealed-host proof fix** | mixed |
 
 Minimum viable slice is **M-DOCS → M0 → M10**, with M1 done first while online. Realistic effort for
 the whole ledger is **3–6 focused weeks** (ESTIMATE), not one session. A one-page at-a-glance summary of
@@ -295,10 +298,11 @@ and the RAM budget has no room for either.
 ### Phase 4 — VERIFY (offline)
 
 ```bash
-make verify        # the 9 assertions, each paired with a positive control
+sudo make verify   # the 9 assertions, each paired with a positive control (sudo: the armed guard
+                   #   blocks the netstat listener-enumeration fallback, so psutil needs privileges)
 make evidence      # signed EVIDENCE-<gen>-<utc>.json/.md + ledger append
 make audit-verify  # hash-chain walk; exit 1 on any break
-make proof         # verify + evidence
+sudo make proof    # verify + evidence
 make smoke         # 14 numbered PASS/FAIL functional checks
 ```
 

@@ -6,7 +6,7 @@ something breaks. Phase-by-phase procedures live in the [Air-gap runbook](AIRGAP
 covers what you do between provisioning runs.
 
 > **Status, 2026-08-01.** M0–M14 are built, merged, and tested — `src/`, `scripts/`, `config/`, `bin/`,
-> `tests/`, and the `Makefile` all exist, 258 tests pass, and `make smoke` is 14/14. The commands, files,
+> `tests/`, and the `Makefile` all exist, 280 tests pass, and `make smoke` is 14/14. The commands, files,
 > gates and signals named below reference real targets. What remains an ESTIMATE is called out where it
 > appears (all latency and RAM figures). The dev host is deliberately kept in PROVISION — never sealed for
 > real — so the sealed-host procedures here are documented and self-tested, not exercised end-to-end on a
