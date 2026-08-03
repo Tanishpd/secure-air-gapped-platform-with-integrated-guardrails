@@ -387,16 +387,30 @@ cleanly or been consciously skipped.
 ## 4. Phase C — VERIFY
 
 ```bash
-make verify        # scripts/verify_airgap.py — the 9 assertions
+sudo make verify   # scripts/verify_airgap.py — the 9 assertions (see the sudo note)
 make evidence      # signed EVIDENCE-<gen>-<utc>.json/.md + ledger append
 make audit-verify  # hash-chain walk; exit 1 on any break
-make proof         # verify + evidence
+sudo make proof    # verify + evidence
 ```
 
+> **Two things learned in the first real seal rehearsal (2026-08-02), both now handled — read before your first seal:**
+>
+> 1. **Run `verify`/`proof` with `sudo` on a sealed host.** On a sealed host the guard is armed in the
+>    `verify` process itself, so `verify` now runs its probes **in-process** against that real, armed guard
+>    (it cannot spawn child interpreters — the guard's subprocess-deny blocks them, by design). One
+>    consequence: the armed guard also blocks the `netstat` fallback used to enumerate non-loopback
+>    listeners, so listener enumeration must use `psutil`, which needs privileges → **`sudo make verify`**.
+>    Without `sudo` that single check reports `unavailable` and the verdict is `INVALID` (never a false PASS).
+> 2. **Seal a *clean, dedicated* host.** Any non-loopback listener (a stray MySQL/Postgres/Redis, a dev
+>    server) is an invalidating condition — `verify` will return `INVALID` until they are stopped or bound to
+>    loopback. Do not seal your daily-driver. (`.DS_Store` and other OS cruft under `models/` are now ignored
+>    by the manifest check, so Finder no longer blocks the seal.)
+
 Each assertion asserts on the **`EgressViolation` type**, never on a generic connection failure, and each
-is paired with a positive control so it cannot pass for the wrong reason. All nine are written and ran at
-M13: every assertion **passed** and every paired control behaved as expected — but the run's verdict was
-`INVALID` by design, because this host was never sealed (see the verdicts table below).
+is paired with a positive control so it cannot pass for the wrong reason. All nine passed at M13 (then in
+PROVISION), and — after the 2026-08-02 fix — **all nine pass again in-process on a genuinely sealed host**
+(rehearsal-validated). The verdict on an unsealed or unclean host is `INVALID` by design (see the verdicts
+table); a green `PASS` needs a clean, sealed, disconnected host run with `sudo`.
 
 | # | Assertion | Paired negative control |
 |---|---|---|
