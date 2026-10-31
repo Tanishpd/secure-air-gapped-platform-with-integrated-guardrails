@@ -45,21 +45,21 @@ dependencies = [
 # Test + lint loop. Installed into .venv (the runtime venv), never shipped sealed.
 dev = [
   "pytest==9.1.1",
-  "hypothesis==6.163.0",
-  "pytest-asyncio==1.4.0",
-  "ruff==0.16.0",
-  "mypy==2.3.0",
-  "types-PyYAML==6.0.12.20260724",
+  "hypothesis==6.170.12",
+  "pytest-asyncio==1.4.1",
+  "ruff==0.17.3",
+  "mypy==2.4.0",
+  "types-PyYAML==6.0.12.20260906",
   # Supply-chain: CVE gate (`make audit-deps`) + SBOM generation (`make sbom`).
   "pip-audit==2.10.1",
-  "cyclonedx-bom==7.3.1",
+  "cyclonedx-bom==7.5.0",
   # SAST over shipped code (`make sast`). CodeQL is the deeper option but needs GHAS
   # (this repo is private); bandit runs anywhere and gates in CI today.
   "bandit==1.9.4",
 ]
 # thinc-apple-ops (Accelerate BLAS for spaCy) is an opt-in perf extra; kept out of
 # the default closure so M0 installs from wheels without a source build.
-apple = ["thinc-apple-ops==1.0.0"]
+apple = ["thinc-apple-ops==1.0.3"]
 
 [project.scripts]
 sagp = "sagp.__main__:main"
